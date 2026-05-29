@@ -1,26 +1,27 @@
-import { NextResponse } from 'next/server'
-import Razorpay from 'razorpay'
+import { NextRequest, NextResponse } from 'next/server'
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID!,
-  key_secret: process.env.RAZORPAY_KEY_SECRET!,
-})
-
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const { amount, plan, role } = await request.json()
+    const body = await request.json()
+    const { amount, currency = 'INR', plan, role, billingCycle } = body
     
-    const options = {
-      amount: amount * 100, // Convert to paise
-      currency: 'INR',
+    // Demo mode - no Razorpay keys required
+    console.log('Creating order for demo mode:', { amount, currency, plan, role, billingCycle })
+    
+    // Return mock order
+    return NextResponse.json({
+      id: `order_${Date.now()}`,
+      amount: Math.round(amount * 100),
+      currency: currency,
       receipt: `receipt_${Date.now()}`,
-      notes: { plan, role }
-    }
+      notes: { plan, role, billingCycle }
+    })
     
-    const order = await razorpay.orders.create(options)
-    return NextResponse.json(order)
   } catch (error) {
     console.error('Error creating order:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Unknown error occurred' },
+      { status: 500 }
+    )
   }
 }
