@@ -102,7 +102,7 @@ export default function AdminDashboard() {
     if (error) { 
       alert('Error: ' + error.message) 
     } else { 
-      alert(`✅ Subscription updated!`); 
+      alert('✅ Subscription updated!'); 
       setShowSubscriptionModal(false); 
       loadAllData() 
     }
@@ -126,7 +126,7 @@ export default function AdminDashboard() {
     if (error) { 
       alert('Error: ' + error.message) 
     } else { 
-      alert(`User created! Pending admin approval.`); 
+      alert('User created! Pending admin approval.'); 
       setShowModal(false); 
       loadAllData(); 
       setForm({ email: '', password: '', role: 'manufacturer', company_name: '' }) 
@@ -136,7 +136,7 @@ export default function AdminDashboard() {
 
   async function updateUserRole(userId: string, newRole: string) {
     const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
-    if (error) { alert('Error: ' + error.message) } else { alert(`Role updated`); loadAllData() }
+    if (error) { alert('Error: ' + error.message) } else { alert('Role updated'); loadAllData() }
   }
 
   async function deleteUser(userId: string, email: string) {
@@ -190,11 +190,12 @@ export default function AdminDashboard() {
 
   const filteredUsers = getFilteredUsers()
 
-  if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>
+  if (loading) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Navbar */}
       <nav className="bg-red-700 px-6 py-4 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-2">
           <Link href="/admin" className="text-2xl font-bold text-white">Midlync Admin</Link>
@@ -253,7 +254,7 @@ export default function AdminDashboard() {
           </select>
         </div>
 
-        {/* Users Table with Subscription Column */}
+        {/* Users Table */}
         <div className="bg-white rounded-xl border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -315,7 +316,7 @@ export default function AdminDashboard() {
                         <button onClick={() => deleteUser(user.id, user.email)} className="bg-gray-600 text-white px-2 py-1 rounded text-xs">Delete</button>
                       </div>
                     </td>
-                  <tr>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -329,15 +330,13 @@ export default function AdminDashboard() {
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="text-xl font-bold mb-4">Create New User</h2>
+            <h2 className="text-xl font-bold mb-4">Create User</h2>
             <form onSubmit={createUser} className="space-y-4">
               <input type="text" placeholder="Company Name" required value={form.company_name} onChange={e => setForm({...form, company_name: e.target.value})} className="w-full border rounded-lg px-4 py-2" />
               <input type="email" placeholder="Email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded-lg px-4 py-2" />
               <input type="password" placeholder="Password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="w-full border rounded-lg px-4 py-2" />
               <select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="w-full border rounded-lg px-4 py-2">
-                <option value="manufacturer">Manufacturer</option>
-                <option value="buyer">Buyer</option>
-                <option value="admin">Admin</option>
+                <option value="manufacturer">Manufacturer</option><option value="buyer">Buyer</option><option value="admin">Admin</option>
               </select>
               <div className="flex gap-3">
                 <button type="submit" disabled={submitting} className="flex-1 bg-red-600 text-white py-2 rounded-lg">{submitting ? 'Creating...' : 'Create'}</button>
@@ -354,7 +353,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4">Reject User</h2>
             <p className="text-sm text-slate-500 mb-4">User: {selectedUser?.email}</p>
-            <textarea rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full border rounded-lg px-4 py-2 mb-4" placeholder="Reason for rejection..." />
+            <textarea rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full border rounded-lg px-4 py-2 mb-4" placeholder="Reason..." />
             <div className="flex gap-3">
               <button onClick={rejectUser} className="flex-1 bg-red-600 text-white py-2 rounded-lg">Reject</button>
               <button onClick={() => setShowRejectModal(false)} className="flex-1 border py-2 rounded-lg">Cancel</button>
