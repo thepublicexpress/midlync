@@ -140,7 +140,7 @@ export default function AdminDashboard() {
   }
 
   async function deleteUser(userId: string, email: string) {
-    if (!confirm(`Delete user ${email}? This action cannot be undone.`)) return
+    if (!confirm(`Delete user ${email}?`)) return
     const { error } = await supabase.from('profiles').delete().eq('id', userId)
     if (error) { alert('Error: ' + error.message) } else { alert('User deleted'); loadAllData() }
   }
@@ -196,12 +196,13 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <nav className="bg-red-700 px-6 py-4 flex justify-between items-center sticky top-0 z-50">
+      {/* Navbar */}
+      <nav className="bg-red-700 px-4 py-3 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <Link href="/admin" className="text-2xl font-bold text-white">Midlync Admin</Link>
+          <Link href="/admin" className="text-xl font-bold text-white">Midlync Admin</Link>
           <span className="bg-white text-red-700 text-xs px-2 py-1 rounded-full font-bold">ADMIN</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           {pendingApprovals.length > 0 && (
             <button onClick={async () => {
               for (const user of pendingApprovals) {
@@ -209,82 +210,81 @@ export default function AdminDashboard() {
               }
               alert(`✅ ${pendingApprovals.length} users approved!`)
               loadAllData()
-            }} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
-              Bulk Approve ({pendingApprovals.length})
+            }} className="bg-green-600 text-white px-2 py-1 rounded text-xs">
+              Bulk ({pendingApprovals.length})
             </button>
           )}
-          <button onClick={handleLogout} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg">Logout</button>
+          <button onClick={handleLogout} className="bg-white/20 text-white px-3 py-1 rounded text-sm">Logout</button>
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex justify-between items-center mb-6">
+      <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
           <div>
-            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-            <p className="text-slate-500 text-sm">Manage users, approvals, subscriptions, and platform settings</p>
+            <h1 className="text-xl font-bold">Admin Dashboard</h1>
+            <p className="text-slate-500 text-xs">Manage users, approvals, subscriptions</p>
           </div>
-          <button onClick={() => setShowModal(true)} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl">+ Create User</button>
+          <button onClick={() => setShowModal(true)} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm">+ Create User</button>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
-          <div className="bg-white rounded-xl p-5 border"><div className="text-2xl mb-2">👥</div><div className="text-2xl font-bold">{users.filter((u: any) => u.role !== 'admin').length}</div><div className="text-xs text-slate-500">Total Users</div></div>
-          <div className="bg-white rounded-xl p-5 border"><div className="text-2xl mb-2">⏳</div><div className="text-2xl font-bold text-yellow-600">{pendingApprovals.length}</div><div className="text-xs text-slate-500">Pending</div></div>
-          <div className="bg-white rounded-xl p-5 border"><div className="text-2xl mb-2">✅</div><div className="text-2xl font-bold text-green-600">{users.filter((u: any) => u.approval_status === 'approved' && u.role !== 'admin').length}</div><div className="text-xs text-slate-500">Approved</div></div>
-          <div className="bg-white rounded-xl p-5 border"><div className="text-2xl mb-2">❌</div><div className="text-2xl font-bold text-red-600">{users.filter((u: any) => u.approval_status === 'rejected' && u.role !== 'admin').length}</div><div className="text-xs text-slate-500">Rejected</div></div>
-          <div className="bg-white rounded-xl p-5 border"><div className="text-2xl mb-2">🏭</div><div className="text-2xl font-bold">{manufacturers.length}</div><div className="text-xs text-slate-500">Manufacturers</div></div>
-          <div className="bg-white rounded-xl p-5 border"><div className="text-2xl mb-2">🛒</div><div className="text-2xl font-bold">{buyers.length}</div><div className="text-xs text-slate-500">Buyers</div></div>
+        {/* Stats Cards - Grid responsive */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-4">
+          <div className="bg-white rounded-lg p-3 border"><div className="text-lg">👥</div><div className="text-xl font-bold">{users.filter((u: any) => u.role !== 'admin').length}</div><div className="text-xs text-slate-500">Total</div></div>
+          <div className="bg-white rounded-lg p-3 border"><div className="text-lg">⏳</div><div className="text-xl font-bold text-yellow-600">{pendingApprovals.length}</div><div className="text-xs text-slate-500">Pending</div></div>
+          <div className="bg-white rounded-lg p-3 border"><div className="text-lg">✅</div><div className="text-xl font-bold text-green-600">{users.filter((u: any) => u.approval_status === 'approved' && u.role !== 'admin').length}</div><div className="text-xs text-slate-500">Approved</div></div>
+          <div className="bg-white rounded-lg p-3 border"><div className="text-lg">❌</div><div className="text-xl font-bold text-red-600">{users.filter((u: any) => u.approval_status === 'rejected' && u.role !== 'admin').length}</div><div className="text-xs text-slate-500">Rejected</div></div>
+          <div className="bg-white rounded-lg p-3 border"><div className="text-lg">🏭</div><div className="text-xl font-bold">{manufacturers.length}</div><div className="text-xs text-slate-500">Mfrs</div></div>
+          <div className="bg-white rounded-lg p-3 border"><div className="text-lg">🛒</div><div className="text-xl font-bold">{buyers.length}</div><div className="text-xs text-slate-500">Buyers</div></div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 border-b mb-6">
-          <button onClick={() => setActiveTab('pending')} className={`px-6 py-2 font-medium ${activeTab === 'pending' ? 'border-b-2 border-red-600 text-red-600' : 'text-slate-500'}`}>⏳ Pending ({pendingApprovals.length})</button>
-          <button onClick={() => setActiveTab('approved')} className={`px-6 py-2 font-medium ${activeTab === 'approved' ? 'border-b-2 border-red-600 text-red-600' : 'text-slate-500'}`}>✅ Approved</button>
-          <button onClick={() => setActiveTab('rejected')} className={`px-6 py-2 font-medium ${activeTab === 'rejected' ? 'border-b-2 border-red-600 text-red-600' : 'text-slate-500'}`}>❌ Rejected</button>
-          <button onClick={() => setActiveTab('all')} className={`px-6 py-2 font-medium ${activeTab === 'all' ? 'border-b-2 border-red-600 text-red-600' : 'text-slate-500'}`}>📋 All Users</button>
+        {/* Tabs - Scrollable on mobile */}
+        <div className="flex gap-1 border-b mb-4 overflow-x-auto whitespace-nowrap">
+          <button onClick={() => setActiveTab('pending')} className={`px-3 py-1 text-sm font-medium ${activeTab === 'pending' ? 'border-b-2 border-red-600 text-red-600' : 'text-slate-500'}`}>⏳ Pending ({pendingApprovals.length})</button>
+          <button onClick={() => setActiveTab('approved')} className={`px-3 py-1 text-sm font-medium ${activeTab === 'approved' ? 'border-b-2 border-red-600 text-red-600' : 'text-slate-500'}`}>✅ Approved</button>
+          <button onClick={() => setActiveTab('rejected')} className={`px-3 py-1 text-sm font-medium ${activeTab === 'rejected' ? 'border-b-2 border-red-600 text-red-600' : 'text-slate-500'}`}>❌ Rejected</button>
+          <button onClick={() => setActiveTab('all')} className={`px-3 py-1 text-sm font-medium ${activeTab === 'all' ? 'border-b-2 border-red-600 text-red-600' : 'text-slate-500'}`}>📋 All</button>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-4 mb-4">
-          <div className="flex-1"><input type="text" placeholder="Search by name or email..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full border rounded-lg px-4 py-2" /></div>
-          <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="border rounded-lg px-4 py-2">
+        {/* Filters - Stack on mobile */}
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          <div className="flex-1"><input type="text" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full border rounded-lg px-3 py-1.5 text-sm" /></div>
+          <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm w-full sm:w-auto">
             <option value="all">All Roles</option>
             <option value="manufacturer">Manufacturer</option>
             <option value="buyer">Buyer</option>
           </select>
         </div>
 
-        {/* Users Table */}
+        {/* Users Table - Horizontal scroll on mobile */}
         <div className="bg-white rounded-xl border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[700px]">
               <thead className="bg-slate-50 border-b">
                 <tr>
-                  <th className="p-4 text-left">Company</th>
-                  <th className="p-4 text-left">Email</th>
-                  <th className="p-4 text-left">Role</th>
-                  <th className="p-4 text-left">Status</th>
-                  <th className="p-4 text-left">Subscription</th>
-                  <th className="p-4 text-left">Approved At</th>
-                  <th className="p-4 text-left">Actions</th>
+                  <th className="p-3 text-left">Company</th>
+                  <th className="p-3 text-left">Email</th>
+                  <th className="p-3 text-left">Role</th>
+                  <th className="p-3 text-left">Status</th>
+                  <th className="p-3 text-left">Subscription</th>
+                  <th className="p-3 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredUsers.map((user: any) => (
                   <tr key={user.id} className="border-b hover:bg-slate-50">
-                    <td className="p-4 font-medium">{user.company_name || '-'}</td>
-                    <td className="p-4">{user.email}</td>
-                    <td className="p-4">
-                      <select value={user.role} onChange={(e) => updateUserRole(user.id, e.target.value)} className={`px-2 py-1 rounded-full text-xs font-semibold border ${getRoleBadgeClass(user.role)}`}>
+                    <td className="p-3 font-medium text-sm">{user.company_name || '-'}</td>
+                    <td className="p-3 text-xs">{user.email}</td>
+                    <td className="p-3">
+                      <select value={user.role} onChange={(e) => updateUserRole(user.id, e.target.value)} className={`px-1 py-0.5 rounded-full text-xs font-semibold border ${getRoleBadgeClass(user.role)}`}>
                         <option value="admin">Admin</option>
                         <option value="manufacturer">Manufacturer</option>
                         <option value="buyer">Buyer</option>
                       </select>
                     </td>
-                    <td className="p-4">{getStatusBadge(user)}</td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-700">
+                    <td className="p-3">{getStatusBadge(user)}</td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-1">
+                        <span className="px-1.5 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700">
                           {user.subscription_plan || 'free'}
                         </span>
                         <button 
@@ -299,21 +299,20 @@ export default function AdminDashboard() {
                           }} 
                           className="text-purple-600 text-xs hover:underline"
                         >
-                          Manage
+                          Edit
                         </button>
                       </div>
                     </td>
-                    <td className="p-4">{user.approved_at ? new Date(user.approved_at).toLocaleDateString() : '-'}</td>
-                    <td className="p-4">
-                      <div className="flex gap-2">
+                    <td className="p-3">
+                      <div className="flex gap-1">
                         {user.approval_status === 'pending' && (
                           <>
-                            <button onClick={() => approveUser(user.id)} className="bg-green-600 text-white px-2 py-1 rounded text-xs">Approve</button>
-                            <button onClick={() => { setSelectedUser(user); setShowRejectModal(true) }} className="bg-red-600 text-white px-2 py-1 rounded text-xs">Reject</button>
+                            <button onClick={() => approveUser(user.id)} className="bg-green-600 text-white px-1.5 py-0.5 rounded text-xs">Approve</button>
+                            <button onClick={() => { setSelectedUser(user); setShowRejectModal(true) }} className="bg-red-600 text-white px-1.5 py-0.5 rounded text-xs">Reject</button>
                           </>
                         )}
-                        <button onClick={() => { setSelectedUser(user); setShowUserDetailModal(true) }} className="bg-blue-600 text-white px-2 py-1 rounded text-xs">View</button>
-                        <button onClick={() => deleteUser(user.id, user.email)} className="bg-gray-600 text-white px-2 py-1 rounded text-xs">Delete</button>
+                        <button onClick={() => { setSelectedUser(user); setShowUserDetailModal(true) }} className="bg-blue-600 text-white px-1.5 py-0.5 rounded text-xs">View</button>
+                        <button onClick={() => deleteUser(user.id, user.email)} className="bg-gray-600 text-white px-1.5 py-0.5 rounded text-xs">Del</button>
                       </div>
                     </td>
                   </tr>
@@ -323,65 +322,58 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {filteredUsers.length === 0 && <div className="text-center py-12 text-slate-500">No users found</div>}
+        {filteredUsers.length === 0 && <div className="text-center py-8 text-slate-500">No users found</div>}
       </div>
 
-      {/* Create User Modal */}
+      {/* Modals - same as before */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowModal(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="text-xl font-bold mb-4">Create User</h2>
-            <form onSubmit={createUser} className="space-y-4">
-              <input type="text" placeholder="Company Name" required value={form.company_name} onChange={e => setForm({...form, company_name: e.target.value})} className="w-full border rounded-lg px-4 py-2" />
-              <input type="email" placeholder="Email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded-lg px-4 py-2" />
-              <input type="password" placeholder="Password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="w-full border rounded-lg px-4 py-2" />
-              <select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="w-full border rounded-lg px-4 py-2">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-3">Create User</h2>
+            <form onSubmit={createUser} className="space-y-3">
+              <input type="text" placeholder="Company Name" required value={form.company_name} onChange={e => setForm({...form, company_name: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm" />
+              <input type="email" placeholder="Email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm" />
+              <input type="password" placeholder="Password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm" />
+              <select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm">
                 <option value="manufacturer">Manufacturer</option><option value="buyer">Buyer</option><option value="admin">Admin</option>
               </select>
-              <div className="flex gap-3">
-                <button type="submit" disabled={submitting} className="flex-1 bg-red-600 text-white py-2 rounded-lg">{submitting ? 'Creating...' : 'Create'}</button>
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 border py-2 rounded-lg">Cancel</button>
+              <div className="flex gap-2 pt-2">
+                <button type="submit" disabled={submitting} className="flex-1 bg-red-600 text-white py-1.5 rounded-lg text-sm">{submitting ? 'Creating...' : 'Create'}</button>
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 border py-1.5 rounded-lg text-sm">Cancel</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Reject Modal */}
       {showRejectModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowRejectModal(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="text-xl font-bold mb-4">Reject User</h2>
-            <p className="text-sm text-slate-500 mb-4">User: {selectedUser?.email}</p>
-            <textarea rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full border rounded-lg px-4 py-2 mb-4" placeholder="Reason..." />
-            <div className="flex gap-3">
-              <button onClick={rejectUser} className="flex-1 bg-red-600 text-white py-2 rounded-lg">Reject</button>
-              <button onClick={() => setShowRejectModal(false)} className="flex-1 border py-2 rounded-lg">Cancel</button>
+          <div className="bg-white rounded-2xl max-w-md w-full p-5" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-3">Reject User</h2>
+            <p className="text-sm text-slate-500 mb-3">User: {selectedUser?.email}</p>
+            <textarea rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm mb-3" placeholder="Reason..." />
+            <div className="flex gap-2">
+              <button onClick={rejectUser} className="flex-1 bg-red-600 text-white py-1.5 rounded-lg text-sm">Reject</button>
+              <button onClick={() => setShowRejectModal(false)} className="flex-1 border py-1.5 rounded-lg text-sm">Cancel</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* User Detail Modal */}
       {showUserDetailModal && selectedUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowUserDetailModal(false)}>
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">User Details</h2><button onClick={() => setShowUserDetailModal(false)} className="text-gray-500">✕</button></div>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="text-sm text-gray-500">Company Name</label><p className="font-medium">{selectedUser.company_name || '-'}</p></div>
-                <div><label className="text-sm text-gray-500">Email</label><p className="font-medium">{selectedUser.email}</p></div>
-                <div><label className="text-sm text-gray-500">Role</label><p className="font-medium capitalize">{selectedUser.role}</p></div>
-                <div><label className="text-sm text-gray-500">Status</label><p>{getStatusBadge(selectedUser)}</p></div>
-                <div><label className="text-sm text-gray-500">Subscription Plan</label><p className="font-medium capitalize">{selectedUser.subscription_plan || 'free'}</p></div>
-                <div><label className="text-sm text-gray-500">Registered On</label><p>{new Date(selectedUser.created_at).toLocaleString()}</p></div>
-                {selectedUser.approved_at && <div><label className="text-sm text-gray-500">Approved On</label><p>{new Date(selectedUser.approved_at).toLocaleString()}</p></div>}
-                {selectedUser.rejected_reason && <div className="col-span-2"><label className="text-sm text-gray-500">Rejection Reason</label><p className="text-red-600">{selectedUser.rejected_reason}</p></div>}
-              </div>
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3"><h2 className="text-lg font-bold">User Details</h2><button onClick={() => setShowUserDetailModal(false)} className="text-gray-500">✕</button></div>
+            <div className="space-y-2 text-sm">
+              <div><label className="text-gray-500">Company:</label> <p className="font-medium">{selectedUser.company_name || '-'}</p></div>
+              <div><label className="text-gray-500">Email:</label> <p>{selectedUser.email}</p></div>
+              <div><label className="text-gray-500">Role:</label> <p className="capitalize">{selectedUser.role}</p></div>
+              <div><label className="text-gray-500">Status:</label> <div>{getStatusBadge(selectedUser)}</div></div>
+              <div><label className="text-gray-500">Subscription:</label> <p className="capitalize">{selectedUser.subscription_plan || 'free'}</p></div>
               {selectedUser.approval_status === 'pending' && (
-                <div className="flex gap-3 mt-4">
-                  <button onClick={() => approveUser(selectedUser.id)} className="flex-1 bg-green-600 text-white py-2 rounded-lg">Approve User</button>
-                  <button onClick={() => { setShowUserDetailModal(false); setShowRejectModal(true) }} className="flex-1 bg-red-600 text-white py-2 rounded-lg">Reject User</button>
+                <div className="flex gap-2 pt-2">
+                  <button onClick={() => approveUser(selectedUser.id)} className="flex-1 bg-green-600 text-white py-1.5 rounded-lg text-sm">Approve</button>
+                  <button onClick={() => { setShowUserDetailModal(false); setShowRejectModal(true) }} className="flex-1 bg-red-600 text-white py-1.5 rounded-lg text-sm">Reject</button>
                 </div>
               )}
             </div>
@@ -389,30 +381,29 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Subscription Modal */}
       {showSubscriptionModal && selectedUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowSubscriptionModal(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="text-xl font-bold mb-4">Manage Subscription - {selectedUser.company_name || selectedUser.email}</h2>
-            <div className="mb-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-3">Manage Subscription</h2>
+            <div className="mb-3">
               <label className="block text-sm font-semibold mb-1">Plan</label>
-              <select value={subscriptionForm.plan} onChange={e => setSubscriptionForm({...subscriptionForm, plan: e.target.value})} className="w-full border rounded-lg px-4 py-2">
+              <select value={subscriptionForm.plan} onChange={e => setSubscriptionForm({...subscriptionForm, plan: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm">
                 <option value="free">Free - ₹0</option>
                 <option value="basic">Basic - ₹{selectedUser.role === 'manufacturer' ? 2999 : 1999}/month</option>
                 <option value="premium">Premium - ₹{selectedUser.role === 'manufacturer' ? 9999 : 4999}/month</option>
                 {selectedUser.role === 'manufacturer' && <option value="enterprise">Enterprise - ₹29999/month</option>}
               </select>
             </div>
-            <div className="mb-4">
+            <div className="mb-3">
               <label className="block text-sm font-semibold mb-1">Duration</label>
-              <select value={subscriptionForm.duration} onChange={e => setSubscriptionForm({...subscriptionForm, duration: e.target.value})} className="w-full border rounded-lg px-4 py-2">
+              <select value={subscriptionForm.duration} onChange={e => setSubscriptionForm({...subscriptionForm, duration: e.target.value})} className="w-full border rounded-lg px-3 py-2 text-sm">
                 <option value="monthly">Monthly</option>
                 <option value="yearly">Yearly (10% off)</option>
               </select>
             </div>
-            <div className="flex gap-3">
-              <button onClick={updateSubscription} className="flex-1 bg-purple-600 text-white py-2 rounded-lg">Save</button>
-              <button onClick={() => setShowSubscriptionModal(false)} className="flex-1 border py-2 rounded-lg">Cancel</button>
+            <div className="flex gap-2">
+              <button onClick={updateSubscription} className="flex-1 bg-purple-600 text-white py-1.5 rounded-lg text-sm">Save</button>
+              <button onClick={() => setShowSubscriptionModal(false)} className="flex-1 border py-1.5 rounded-lg text-sm">Cancel</button>
             </div>
           </div>
         </div>
