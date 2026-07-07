@@ -4,11 +4,14 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Navbar from '@/app/components/Navbar'
+import { generateBuyerCode } from '@/lib/utils/codeGenerator'
+import { countries, getCountryCode } from '@/lib/countries'
 
 export default function BuyerProfilePage() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [countryCode, setCountryCode] = useState('+91')
   const [form, setForm] = useState({
     company_name: '',
     country: '',
@@ -29,9 +32,11 @@ export default function BuyerProfilePage() {
     
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
     setProfile(data)
+    const country = data?.country || ''
+    setCountryCode(getCountryCode(country) || '+91')
     setForm({
       company_name: data?.company_name || '',
-      country: data?.country || '',
+      country: country,
       contact_person: data?.contact_person || '',
       contact_phone: data?.contact_phone || '',
       address: data?.address || '',
@@ -43,11 +48,20 @@ export default function BuyerProfilePage() {
     e.preventDefault()
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const { error } = await supabase.from('profiles').update(form).eq('id', user.id)
+    
+    // Generate buyer code if it doesn't exist
+    const byerCode = profile?.buyer_code || generateBuyerCode(user.id)
+    
+    const { error } = await supabase.from('profiles').update({
+      ...form
+    }).eq('id', user.id)
+    
     if (error) {
       alert('Error: ' + error.message)
     } else {
-      alert('Profile updated successfully!')
+      alert('✅ Profile updated successfully!')
+      // Update profile state with the generated code
+      setProfile({ ...profile, buyer_code: byerCode })
     }
     setSaving(false)
   }
@@ -65,25 +79,17 @@ export default function BuyerProfilePage() {
             <button onClick={() => router.push('/buyer/dashboard')} className="text-slate-600 hover:text-slate-800">← Back</button>
           </div>
 
-          {/* ✅ UPGRADE PLAN SECTION - ADDED HERE */}
-          <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
-            <div className="flex justify-between items-center flex-wrap gap-4">
+          {/* Profile Information Section */}
+
+          {/* Buyer Code Display */}
+          <div className="mb-6 p-4 bg-gradient-to-br from-blue-50 to-slate-50 rounded-lg border-2 border-blue-200">
+            <p className="text-xs text-slate-600 mb-2">🔐 Your Unique Buyer Code</p>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center font-bold text-blue-600">👤</div>
               <div>
-                <h3 className="font-semibold text-lg">💰 Current Plan: <span className="text-purple-600 capitalize">{profile?.subscription_plan || 'Free'}</span></h3>
-                {profile?.subscription_status === 'trial' && profile?.trial_end_date && (
-                  <p className="text-sm text-green-600">🎉 Trial ends on {new Date(profile.trial_end_date).toLocaleDateString()}</p>
-                )}
-                {profile?.subscription_status === 'active' && (
-                  <p className="text-sm text-gray-500">Valid till: {profile?.subscription_end_date ? new Date(profile.subscription_end_date).toLocaleDateString() : 'N/A'}</p>
-                )}
-                <p className="text-sm text-gray-500 mt-1">Upgrade to unlock more features</p>
+                <p className="font-mono text-xl font-bold text-blue-600">{profile?.buyer_code || 'BYR-CODE'}</p>
+                <p className="text-xs text-slate-500">Manufacturers see your orders using this code (your details stay private)</p>
               </div>
-              <Link 
-                href="/subscription" 
-                className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-semibold transition"
-              >
-                Upgrade Plan →
-              </Link>
             </div>
           </div>
           
@@ -94,9 +100,18 @@ export default function BuyerProfilePage() {
                 className="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-cyan-500" />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">Country</label>
-              <input type="text" value={form.country} onChange={e => setForm({...form, country: e.target.value})}
-                className="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-cyan-500" />
+              <label className="block text-sm font-semibold mb-1">Country *</label>
+              <select value={form.country} onChange={e => {
+                const selected = e.target.value
+                setForm({...form, country: selected})
+                setCountryCode(getCountryCode(selected))
+              }}
+                className="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-cyan-500">
+                <option value="">Select a country</option>
+                {countries.map(country => (
+                  <option key={country.name} value={country.name}>{country.name} ({country.code})</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-semibold mb-1">Contact Person</label>
@@ -105,8 +120,13 @@ export default function BuyerProfilePage() {
             </div>
             <div>
               <label className="block text-sm font-semibold mb-1">Contact Phone</label>
-              <input type="tel" value={form.contact_phone} onChange={e => setForm({...form, contact_phone: e.target.value})}
-                className="w-full border rounded-lg px-4 py-2.5 focus:outline-none focus:border-cyan-500" />
+              <div className="flex gap-3">
+                <div className="flex items-center bg-slate-100 px-4 rounded-lg border border-slate-300 font-semibold text-slate-700 whitespace-nowrap">
+                  {countryCode}
+                </div>
+                <input type="tel" value={form.contact_phone} onChange={e => setForm({...form, contact_phone: e.target.value})}
+                  className="flex-1 border rounded-lg px-4 py-2.5 focus:outline-none focus:border-cyan-500" placeholder="Enter phone number" />
+              </div>
             </div>
             <div>
               <label className="block text-sm font-semibold mb-1">Business Address</label>

@@ -1,24 +1,31 @@
-import { dirname } from "path";
-import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
+// eslint.config.mjs
+import nextVitals from "eslint-config-next/core-web-vitals";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+/** @type {import('eslint').Linter.Config[]} */
+const config = [
+  // Next.js की recommended rules
+  ...nextVitals,
 
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
-
-const eslintConfig = [
-  ...compat.extends("next/core-web-vitals"),
+  // आपकी कस्टम rules
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": "warn",
       "react/no-unescaped-entities": "off",
-      "react-hooks/exhaustive-deps": "warn"
-    }
-  }
+      "react-hooks/exhaustive-deps": "warn",
+    },
+  },
+
+  // Files/folders को ignore करने के लिए
+  {
+    ignores: [
+      ".next/**",
+      "out/**",
+      "build/**",
+      "node_modules/**",
+      "dist/**",
+    ],
+  },
 ];
 
-export default eslintConfig;
+export default config;

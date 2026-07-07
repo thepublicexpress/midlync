@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sendAdminEmail } from '@/lib/utils/adminEmail'
 
 const supabaseUrl = 'https://grsapzroyfcueysrmedk.supabase.co'
 const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdyc2FwenJveWZjdWV5c3JtZWRrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODg5OTU3NiwiZXhwIjoyMDk0NDc1NTc2fQ.jeqvYugmVoR4xaQRJSgEsXUXgY-9JCPqARTy3lu8FZ0'
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, title, message, type, relatedId } = body
+    const { userId, title, message, type, relatedId, buyerCode, manufacturerCode, productTitle, quantity } = body
     
     if (!userId || !title || !message) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -65,6 +66,27 @@ export async function POST(request: NextRequest) {
     
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Send admin notification for important events
+    if (type === 'inquiry' && buyerCode && manufacturerCode) {
+      await sendAdminEmail(
+        `📨 New Inquiry from ${buyerCode}`,
+        `Buyer Code: ${buyerCode}\nProduct: ${productTitle}\nManufacturer Code: ${manufacturerCode}\nQuantity: ${quantity}\n\nMessage: ${message}`,
+        'inquiry'
+      )
+    } else if (type === 'order' && buyerCode && manufacturerCode) {
+      await sendAdminEmail(
+        `🛒 New Order from ${buyerCode}`,
+        `Buyer Code: ${buyerCode}\nManufacturer Code: ${manufacturerCode}\nOrder ID: ${relatedId}\n\nDetails: ${message}`,
+        'order'
+      )
+    } else if (type === 'wishlist' && buyerCode && productTitle) {
+      await sendAdminEmail(
+        `📌 Buyer Liked Product: ${productTitle}`,
+        `Buyer Code: ${buyerCode}\nProduct: ${productTitle}\nManufacturer Code: ${manufacturerCode || 'N/A'}`,
+        'wishlist'
+      )
     }
     
     return NextResponse.json({ success: true })

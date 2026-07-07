@@ -5,18 +5,27 @@ import { useRouter } from 'next/navigation'
 import Navbar from '@/app/components/Navbar'
 
 export default function InspectionsPage() {
-  const [inspections, setInspections] = useState([])
-  const [orders, setOrders] = useState([])
-  const [profile, setProfile] = useState(null)
+  const [inspections, setInspections] = useState<any[]>([])
+  const [orders, setOrders] = useState<any[]>([])
+  const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [selectedOrder, setSelectedOrder] = useState<any>(null)
+  const [selectedInspection, setSelectedInspection] = useState<any>(null)
   const [form, setForm] = useState({
     inspector_name: '',
     inspection_date: '',
     result: 'pending',
     notes: '',
     photos: []
+  })
+  const [reportForm, setReportForm] = useState({
+    title: '',
+    description: '',
+    findings: '',
+    recommendations: '',
+    status: 'draft'
   })
   const router = useRouter()
   const supabase = createClient()
@@ -73,7 +82,7 @@ export default function InspectionsPage() {
     }
   }
 
-  async function updateInspectionResult(id, result) {
+  async function updateInspectionResult(id: string, result: string) {
     const { error } = await supabase
       .from('inspections')
       .update({ result: result, status: 'completed' })
@@ -83,6 +92,32 @@ export default function InspectionsPage() {
       alert('Error: ' + error.message)
     } else {
       alert(`Inspection marked as ${result.toUpperCase()}`)
+      loadData()
+    }
+  }
+
+  async function addReport(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedInspection) return
+
+    const { error } = await supabase
+      .from('inspection_reports')
+      .insert({
+        inspection_id: selectedInspection.id,
+        title: reportForm.title,
+        description: reportForm.description,
+        findings: reportForm.findings,
+        recommendations: reportForm.recommendations,
+        status: reportForm.status,
+        created_at: new Date().toISOString()
+      })
+
+    if (error) {
+      alert('Error: ' + error.message)
+    } else {
+      alert('✅ Report added successfully!')
+      setShowReportModal(false)
+      setReportForm({ title: '', description: '', findings: '', recommendations: '', status: 'draft' })
       loadData()
     }
   }
@@ -157,12 +192,20 @@ export default function InspectionsPage() {
                       }`}>
                         {inspection.result === 'pass' ? '✅ Pass' : inspection.result === 'fail' ? '❌ Fail' : '⏳ Pending'}
                       </span>
-                      {inspection.result === 'pending' && (
-                        <div className="mt-2 flex gap-2">
-                          <button onClick={() => updateInspectionResult(inspection.id, 'pass')} className="bg-green-600 text-white px-3 py-1 rounded text-xs">Pass</button>
-                          <button onClick={() => updateInspectionResult(inspection.id, 'fail')} className="bg-red-600 text-white px-3 py-1 rounded text-xs">Fail</button>
-                        </div>
-                      )}
+                      <div className="mt-3 flex flex-col gap-2">
+                        {inspection.result === 'pending' && (
+                          <div className="flex gap-2">
+                            <button onClick={() => updateInspectionResult(inspection.id, 'pass')} className="bg-green-600 text-white px-3 py-1 rounded text-xs">Pass</button>
+                            <button onClick={() => updateInspectionResult(inspection.id, 'fail')} className="bg-red-600 text-white px-3 py-1 rounded text-xs">Fail</button>
+                          </div>
+                        )}
+                        <button 
+                          onClick={() => { setSelectedInspection(inspection); setShowReportModal(true) }}
+                          className="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700"
+                        >
+                          📄 Add Report
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -196,6 +239,81 @@ export default function InspectionsPage() {
               <div className="flex gap-3 pt-4">
                 <button type="submit" className="flex-1 bg-cyan-600 text-white py-2 rounded-lg">Schedule</button>
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 border py-2 rounded-lg">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Report Modal */}
+      {showReportModal && selectedInspection && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto" onClick={() => setShowReportModal(false)}>
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 my-8" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-bold mb-2">📄 Add Inspection Report</h2>
+            <p className="text-sm text-slate-500 mb-6">For: {selectedInspection.orders?.products?.title} (Order: #{selectedInspection.orders?.order_number})</p>
+            
+            <form onSubmit={addReport} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-1">Report Title</label>
+                <input 
+                  type="text" 
+                  required 
+                  value={reportForm.title} 
+                  onChange={e => setReportForm({...reportForm, title: e.target.value})}
+                  className="w-full border rounded-lg px-4 py-2" 
+                  placeholder="e.g., Quality Inspection Report"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-1">Description</label>
+                <textarea 
+                  rows={3}
+                  value={reportForm.description} 
+                  onChange={e => setReportForm({...reportForm, description: e.target.value})}
+                  className="w-full border rounded-lg px-4 py-2" 
+                  placeholder="Brief overview of the inspection"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-1">Findings</label>
+                <textarea 
+                  rows={3}
+                  value={reportForm.findings} 
+                  onChange={e => setReportForm({...reportForm, findings: e.target.value})}
+                  className="w-full border rounded-lg px-4 py-2" 
+                  placeholder="Detailed findings from the inspection"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-1">Recommendations</label>
+                <textarea 
+                  rows={3}
+                  value={reportForm.recommendations} 
+                  onChange={e => setReportForm({...reportForm, recommendations: e.target.value})}
+                  className="w-full border rounded-lg px-4 py-2" 
+                  placeholder="Recommendations or action items"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-1">Status</label>
+                <select 
+                  value={reportForm.status} 
+                  onChange={e => setReportForm({...reportForm, status: e.target.value})}
+                  className="w-full border rounded-lg px-4 py-2"
+                >
+                  <option value="draft">📝 Draft</option>
+                  <option value="submitted">📤 Submitted</option>
+                  <option value="approved">✅ Approved</option>
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold">Save Report</button>
+                <button type="button" onClick={() => setShowReportModal(false)} className="flex-1 border py-2 rounded-lg font-semibold">Cancel</button>
               </div>
             </form>
           </div>

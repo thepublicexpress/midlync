@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/app/components/Navbar'
 import CompanyProfile from '@/app/components/CompanyProfile'
+import { generateManufacturerCode } from '@/lib/code-generator'
 
 export default function ProductDetailPage() {
   const [product, setProduct] = useState(null)
@@ -48,6 +49,18 @@ export default function ProductDetailPage() {
       .single()
 
     setProduct(productData)
+    
+    // Fetch manufacturer profile
+    if (productData?.manufacturer_id) {
+      const { data: mfrProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', productData.manufacturer_id)
+        .single()
+      setProfile(mfrProfile)
+    }
+    
+    setLoading(false)
 
     if (user && productData) {
       setIsOwner(user.id === productData.manufacturer_id)
@@ -323,44 +336,23 @@ export default function ProductDetailPage() {
               <div className="mt-8 pt-4 border-t border-slate-100">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="font-semibold text-slate-800">
-                    🏭 Manufacturer Information
+                    🏭 Manufacturer
                   </h3>
-                  <button
-                    onClick={() => setShowCompanyProfile(!showCompanyProfile)}
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    {showCompanyProfile ? 'Show less' : 'View full profile'}
-                  </button>
                 </div>
                 
-                {/* Compact Manufacturer Info */}
-                <div className="bg-slate-50 rounded-lg p-4">
+                {/* Show only Manufacturer Code to Buyers */}
+                <div className="bg-gradient-to-br from-blue-50 to-slate-50 rounded-lg p-4 border border-blue-100">
                   <div className="flex items-center gap-3">
-                    {profile?.logo_url ? (
-                      <img src={profile.logo_url} alt={profile.company_name} className="w-12 h-12 rounded-full object-cover" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-xl">
-                        🏢
-                      </div>
-                    )}
+                    <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-xl font-bold text-blue-600">
+                      🏭
+                    </div>
                     <div>
-                      <p className="font-semibold text-slate-800">{profile?.company_name || 'Company Name'}</p>
-                      {profile?.city && profile?.country && (
-                        <p className="text-xs text-slate-500">{profile.city}, {profile.country}</p>
-                      )}
-                      {profile?.year_established && (
-                        <p className="text-xs text-slate-500">Est. {profile.year_established}</p>
-                      )}
+                      <p className="text-xs text-slate-500 mb-1">Manufacturer Code</p>
+                      <p className="font-mono text-lg font-bold text-blue-600">{profile?.id ? generateManufacturerCode(profile.id) : 'MFR-CODE'}</p>
+                      <p className="text-xs text-slate-500 mt-1">✓ Verified Manufacturer</p>
                     </div>
                   </div>
                 </div>
-
-                {/* Full Company Profile (expandable) */}
-                {showCompanyProfile && (
-                  <div className="mt-3">
-                    <CompanyProfile userId={product.manufacturer_id} role="manufacturer" />
-                  </div>
-                )}
               </div>
             )}
 

@@ -91,7 +91,7 @@ export default function BuyerDashboard() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <Link href="/buyer/browse" className="bg-cyan-600 hover:bg-cyan-700 text-white p-4 rounded-xl text-center transition">
             <div className="text-2xl mb-1">🛍️</div>
-            <div className="font-semibold text-sm">Shop</div>
+            <div className="font-semibold text-sm">Marketplace</div>
           </Link>
           <Link href="/buyer/orders" className="bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-xl text-center transition">
             <div className="text-2xl mb-1">📦</div>

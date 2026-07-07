@@ -17,7 +17,6 @@ export default function Navbar({ role, companyName, cartCount = 0 }: NavbarProps
   const supabase = createClient()
   const [localCartCount, setLocalCartCount] = useState(cartCount)
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
-  const [lowStockCount, setLowStockCount] = useState(0)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -30,31 +29,7 @@ export default function Navbar({ role, companyName, cartCount = 0 }: NavbarProps
     return () => window.removeEventListener('storage', updateCartCount)
   }, [])
 
-  // Check low stock for manufacturer
-  useEffect(() => {
-    if (role === 'manufacturer') {
-      checkLowStock()
-      const interval = setInterval(checkLowStock, 60000)
-      return () => clearInterval(interval)
-    }
-  }, [role])
 
-  async function checkLowStock() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data: products } = await supabase
-      .from('products')
-      .select('stock_quantity, low_stock_threshold')
-      .eq('manufacturer_id', user.id)
-
-    if (products) {
-      const lowStock = products.filter(p => 
-        p.stock_quantity <= p.low_stock_threshold && p.stock_quantity > 0
-      ).length
-      setLowStockCount(lowStock)
-    }
-  }
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -116,7 +91,6 @@ export default function Navbar({ role, companyName, cartCount = 0 }: NavbarProps
             icon: '⚙️',
             items: [
               { name: 'Profile', href: '/manufacturer/profile', icon: '👤' },
-              { name: 'Subscription', href: '/subscription', icon: '💰' },
             ]
           }
         ]
@@ -127,7 +101,7 @@ export default function Navbar({ role, companyName, cartCount = 0 }: NavbarProps
       return {
         main: [
           { name: 'Dashboard', href: '/buyer/dashboard', icon: '📊' },
-          { name: 'Shop', href: '/buyer/browse', icon: '🛍️' },
+          { name: 'Marketplace', href: '/buyer/browse', icon: '🛍️' },
           { name: 'Orders', href: '/buyer/orders', icon: '📦' },
           { name: 'Sample Request', href: '/buyer/sample-request', icon: '🧪' },
           { name: 'Wishlist', href: '/buyer/wishlist', icon: '❤️' },
@@ -138,7 +112,6 @@ export default function Navbar({ role, companyName, cartCount = 0 }: NavbarProps
             icon: '⚙️',
             items: [
               { name: 'Profile', href: '/buyer/profile', icon: '👤' },
-              { name: 'Subscription', href: '/subscription', icon: '💰' },
             ]
           }
         ]
@@ -262,15 +235,6 @@ export default function Navbar({ role, companyName, cartCount = 0 }: NavbarProps
 
           {/* Right Side */}
           <div className="flex items-center gap-4">
-            {/* Low Stock Alert for Manufacturer */}
-            {role === 'manufacturer' && lowStockCount > 0 && (
-              <Link href="/manufacturer/inventory?filter=low" className="relative">
-                <span className="text-xl">⚠️</span>
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
-                  {lowStockCount}
-                </span>
-              </Link>
-            )}
             
             {role === 'buyer' && (
               <Link href="/buyer/cart" className="relative">

@@ -70,6 +70,19 @@ export async function POST(request: Request) {
     
     console.log('✅ Inquiry inserted:', inquiry.id)
     
+    // Get buyer code and manufacturer code for admin notification
+    const { data: buyerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('buyer_code')
+      .eq('id', buyer_id)
+      .single()
+
+    const { data: mfrProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('manufacturer_code')
+      .eq('id', product.manufacturer_id)
+      .single()
+    
     // ✅ Send notification to manufacturer
     const { data: notification, error: notifError } = await supabaseAdmin
       .from('notifications')
@@ -88,6 +101,27 @@ export async function POST(request: Request) {
       console.error('❌ Notification error:', notifError)
     } else {
       console.log('✅ Notification sent to manufacturer:', product.manufacturer_id)
+    }
+
+    // Send admin notification with buyer and manufacturer codes
+    try {
+      await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/notifications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: 'admin',
+          title: `📨 New Inquiry from ${buyerProfile?.buyer_code || 'Buyer'}`,
+          message: message,
+          type: 'inquiry',
+          relatedId: inquiry.id,
+          buyerCode: buyerProfile?.buyer_code,
+          manufacturerCode: mfrProfile?.manufacturer_code,
+          productTitle: product.title,
+          quantity: quantity
+        })
+      })
+    } catch (adminNotifError) {
+      console.error('Error sending admin notification:', adminNotifError)
     }
     
     return NextResponse.json({ 

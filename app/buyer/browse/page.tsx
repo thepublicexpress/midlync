@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/app/components/Navbar'
+import { generateManufacturerCode } from '@/lib/code-generator'
 
 export default function BuyerBrowsePage() {
   const [products, setProducts] = useState([])
@@ -29,13 +30,32 @@ export default function BuyerBrowsePage() {
       setProfile(profileData)
       
       // Fetch all active products (buyer can see all)
-      const { data: productsData } = await supabase
-        .from('products')
-        .select('*, manufacturer:profiles!manufacturer_id(company_name)')
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-      
-      setProducts(productsData || [])
+      try {
+        console.log('🔄 Fetching products...')
+        
+        // Query without the missing manufacturer_code column
+        const { data: productsData, error: productsError } = await supabase
+          .from('products')
+          .select('id, title, description, category, price_per_unit, currency, moq, manufacturer_id, image_url, status')
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+        
+        if (productsError) {
+          console.error('❌ Products query error:', {
+            message: productsError.message,
+            details: productsError.details,
+            hint: productsError.hint,
+            code: productsError.code
+          })
+        } else {
+          console.log('✅ Products loaded:', productsData?.length || 0)
+        }
+        
+        setProducts(productsData || [])
+      } catch (err) {
+        console.error('❌ Products fetch exception:', err)
+        setProducts([])
+      }
       setLoading(false)
     }
     load()
@@ -181,9 +201,9 @@ export default function BuyerBrowsePage() {
                     <p className="text-cyan-600 font-bold text-xl mt-1">
                       ₹{p.price_per_unit?.toLocaleString('en-IN') || '—'}
                     </p>
-                    {p.manufacturer?.company_name && (
+                    {p.manufacturer_id && (
                       <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                        <span>🏭</span> {p.manufacturer.company_name}
+                        <span>🏭</span> {generateManufacturerCode(p.manufacturer_id)}
                       </p>
                     )}
                     {p.category && (

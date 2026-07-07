@@ -4,9 +4,23 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/app/components/Navbar'
 
+interface CartItem {
+  id: string
+  title: string
+  price: number
+  image?: string
+  category?: string
+  manufacturer_id: string
+  quantity: number
+}
+
+interface Profile {
+  company_name: string
+}
+
 export default function CartPage() {
-  const [cart, setCart] = useState([])
-  const [profile, setProfile] = useState(null)
+  const [cart, setCart] = useState<CartItem[]>([])
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [placing, setPlacing] = useState(false)
   const router = useRouter()
@@ -21,7 +35,7 @@ export default function CartPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(data)
+      setProfile(data as Profile)
     }
     setLoading(false)
   }
@@ -33,19 +47,19 @@ export default function CartPage() {
     }
   }
 
-  function saveCart(newCart) {
+  function saveCart(newCart: CartItem[]) {
     setCart(newCart)
     localStorage.setItem('midlync_cart', JSON.stringify(newCart))
   }
 
-  function updateQuantity(productId, quantity) {
+  function updateQuantity(productId: string, quantity: number) {
     const newCart = cart.map(item => 
       item.id === productId ? { ...item, quantity: Math.max(1, quantity) } : item
     )
     saveCart(newCart)
   }
 
-  function removeItem(productId) {
+  function removeItem(productId: string) {
     const newCart = cart.filter(item => item.id !== productId)
     saveCart(newCart)
   }
@@ -69,52 +83,96 @@ export default function CartPage() {
       return
     }
 
-    const orderNumber = 'ORD-' + Date.now()
-    
-    // Create order for each product (or single order with multiple items)
-    for (const item of cart) {
-      const { error } = await supabase.from('orders').insert({
-        order_number: orderNumber,
-        manufacturer_id: item.manufacturer_id,
-        buyer_id: user.id,
-        product_id: item.id,
-        quantity: item.quantity,
-        unit_price: item.price,
-        total_amount: item.price * item.quantity,
-        currency: 'USD',
-        stage: 1,
-        stage_name: 'Order Placed',
-        status: 'pending'
-      })
+    try {
+      // Get buyer profile with buyer code
+      const { data: buyerProfile } = await supabase
+        .from('profiles')
+        .select('buyer_code, company_name')
+        .eq('id', user.id)
+        .single()
 
-      if (error) {
-        console.error('Order error:', error)
-        alert('Error placing order: ' + error.message)
-        setPlacing(false)
-        return
+      const orderNumber = 'ORD-' + Date.now()
+      const orderIds: string[] = []
+      
+      // Create order for each product
+      for (const item of cart) {
+        const { data: newOrder, error } = await supabase
+          .from('orders')
+          .insert({
+            order_number: orderNumber,
+            manufacturer_id: item.manufacturer_id,
+            buyer_id: user.id,
+            product_id: item.id,
+            quantity: item.quantity,
+            unit_price: item.price,
+            total_amount: item.price * item.quantity,
+            currency: 'USD',
+            stage: 1,
+            stage_name: 'Order Placed',
+            status: 'pending'
+          })
+          .select('id')
+
+        if (error) {
+          console.error('Order error:', error)
+          alert('Error placing order: ' + error.message)
+          setPlacing(false)
+          return
+        }
+        
+        if (newOrder && newOrder[0]) {
+          orderIds.push(newOrder[0].id)
+        }
       }
+
+      // Get manufacturer and product details for notifications
+      for (const item of cart) {
+        const { data: mfrProfile } = await supabase
+          .from('profiles')
+          .select('manufacturer_code')
+          .eq('id', item.manufacturer_id)
+          .single()
+
+        // Get all admin and agency users
+        const { data: adminAgencyUsers } = await supabase
+          .from('profiles')
+          .select('id')
+          .in('role', ['admin', 'agency'])
+
+        // Send notification to each admin and agency user
+        if (adminAgencyUsers && adminAgencyUsers.length > 0) {
+          for (const adminUser of adminAgencyUsers) {
+            await fetch('/api/notifications', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: adminUser.id,
+                title: `📦 New Order from ${buyerProfile?.buyer_code || 'BYR-CODE'}`,
+                message: `Order: ${orderNumber}\nBuyer: ${buyerProfile?.buyer_code || 'BYR-CODE'}\nProduct: ${item.title}\nManufacturer: ${mfrProfile?.manufacturer_code || 'MFR-CODE'}\nQuantity: ${item.quantity}\nAmount: $${(item.price * item.quantity).toFixed(2)}`,
+                type: 'order',
+                relatedId: orderIds[0] || '',
+                buyerCode: buyerProfile?.buyer_code,
+                manufacturerCode: mfrProfile?.manufacturer_code,
+                productTitle: item.title,
+                quantity: item.quantity
+              })
+            })
+          }
+        }
+      }
+
+      // Clear cart
+      localStorage.removeItem('midlync_cart')
+      setCart([])
+      
+      alert('✅ Order placed successfully! Admin & Agency have been notified.')
+      router.push('/buyer/orders')
+    } catch (error) {
+      console.error('Error placing order:', error)
+      alert('Error placing order')
+    } finally {
+      setPlacing(false)
     }
-
-    // Clear cart
-    localStorage.removeItem('midlync_cart')
-    setCart([])
-    
-    // Send notification to manufacturer
-    await fetch('/api/notifications', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: cart[0]?.manufacturer_id,
-        title: 'New Order Received',
-        message: `Order ${orderNumber} placed by ${profile?.company_name}`,
-        type: 'order',
-        metadata: { orderNumber }
-      })
-    })
-
-    alert('Order placed successfully!')
-    router.push('/buyer/orders')
-    setPlacing(false)
   }
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>
@@ -181,7 +239,7 @@ export default function CartPage() {
                 </tbody>
                 <tfoot className="bg-slate-50">
                   <tr>
-                    <td colSpan="3" className="p-4 text-right font-bold">Total:</td>
+                    <td colSpan={3} className="p-4 text-right font-bold">Total:</td>
                     <td className="p-4 font-bold text-xl text-cyan-600">${getTotal().toFixed(2)}</td>
                     <td></td>
                   </tr>

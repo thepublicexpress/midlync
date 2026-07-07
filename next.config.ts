@@ -1,11 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,  // ✅ Skip ESLint during build
-  },
+  // ❌ eslint सेक्शन पूरी तरह हटा दिया गया है
+  // अब ESLint को अलग कॉन्फ़िग फ़ाइल (eslint.config.mjs) में manage करें
+
   typescript: {
-    ignoreBuildErrors: true,   // ✅ Skip TypeScript errors during build
+    ignoreBuildErrors: true,   // ✅ TypeScript errors को ignore करना है तो रखें
   },
   images: {
     remotePatterns: [

@@ -16,8 +16,17 @@ export default function OrdersPage() {
   const [trackingUrl, setTrackingUrl] = useState('')
   const [estimatedDelivery, setEstimatedDelivery] = useState('')
   const [rejectReason, setRejectReason] = useState('')
+  const [poFile, setPoFile] = useState<File | null>(null)
+  const [uploadingPo, setUploadingPo] = useState(false)
+  const [showPoModal, setShowPoModal] = useState(false)
+  const [poCustomFields, setPoCustomFields] = useState<any[]>([{ label: '', value: '' }])
   const router = useRouter()
   const supabase = createClient()
+
+  type CustomField = {
+    label: string
+    value: string
+  }
 
   const stages = [
     { id: 1, name: 'Order Placed', icon: '🛒', color: 'bg-blue-100 text-blue-700' },
@@ -133,6 +142,83 @@ export default function OrdersPage() {
     await updateOrderStage(order, 7)
   }
 
+  function addPoCustomField() {
+    setPoCustomFields([...poCustomFields, { label: '', value: '' }])
+  }
+
+  function updatePoCustomField(index: number, field: keyof CustomField, value: string) {
+    const updated = [...poCustomFields]
+    updated[index][field] = value
+    setPoCustomFields(updated)
+  }
+
+  function removePoCustomField(index: number) {
+    const updated = poCustomFields.filter((_, i) => i !== index)
+    setPoCustomFields(updated.length ? updated : [{ label: '', value: '' }])
+  }
+
+  function buildPoDetailsPayload() {
+    const details: Record<string, string> = {}
+    poCustomFields
+      .filter((field) => field.label.trim())
+      .forEach((field) => {
+        details[field.label.trim()] = field.value
+      })
+    return Object.keys(details).length > 0 ? details : null
+  }
+
+  async function uploadPO(order: any) {
+    if (!poFile) {
+      alert('Please select a file first')
+      return
+    }
+
+    setUploadingPo(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Please log in again')
+
+      const fileExt = poFile.name.split('.').pop()
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `purchase-orders/${user.id}/${order.id}/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('po-files')
+        .upload(filePath, poFile)
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('po-files')
+        .getPublicUrl(filePath)
+
+      const poDetails = buildPoDetailsPayload()
+
+      // Update order with PO file URL and custom details
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ 
+          po_file_url: publicUrl,
+          po_details: poDetails ? JSON.stringify(poDetails) : null,
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', order.id)
+
+      if (updateError) throw updateError
+
+      alert('✅ PO file uploaded successfully')
+      setPoFile(null)
+      setPoCustomFields([{ label: '', value: '' }])
+      setShowPoModal(false)
+      loadOrders()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      alert('Failed to upload PO: ' + message)
+    } finally {
+      setUploadingPo(false)
+    }
+  }
+
   function getStageStatus(orderStage) {
     return stages.map(stage => ({
       ...stage,
@@ -187,6 +273,51 @@ export default function OrdersPage() {
                           📦 Tracking: {order.tracking_number}
                         </span>
                       )}
+                    </div>
+                  </div>
+
+                  {/* PO File Status - At Top */}
+                  <div className="p-6 pb-0 mb-4 border-b">
+                    <div className="flex justify-between items-start gap-4">
+                      <div>
+                        <h4 className="font-semibold text-sm mb-2">📄 Purchase Order</h4>
+                        {order.po_file_url ? (
+                          <div className="space-y-2">
+                            <a
+                              href={order.po_file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline text-sm block"
+                            >
+                              ✅ View PO File →
+                            </a>
+                            {order.po_details && (
+                              <div className="text-xs text-slate-600 space-y-1">
+                                {Object.entries(JSON.parse(order.po_details) as Record<string, string>).map(([key, val]) => (
+                                  <div key={key}><strong>{key}:</strong> {val}</div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-slate-500 text-sm">No PO file uploaded yet</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => { 
+                          setSelectedOrder(order)
+                          setPoFile(null)
+                          const poDetails = order.po_details ? JSON.parse(order.po_details) : {}
+                          setPoCustomFields(Object.keys(poDetails).length > 0 
+                            ? Object.entries(poDetails).map(([k, v]) => ({ label: k, value: String(v) }))
+                            : [{ label: '', value: '' }]
+                          )
+                          setShowPoModal(true) 
+                        }}
+                        className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded-lg text-xs font-medium transition shrink-0"
+                      >
+                        {order.po_file_url ? '📤 Update PO' : '📤 Upload PO'}
+                      </button>
                     </div>
                   </div>
 
@@ -247,7 +378,7 @@ export default function OrdersPage() {
 
                     {/* Action Buttons */}
                     {!isRejectedOrCancelled && order.stage < 5 && (
-                      <div className="flex gap-3 justify-end">
+                      <div className="flex gap-3 justify-end flex-wrap">
                         <button
                           onClick={() => { setSelectedOrder(order); setShowRejectModal(true); setUpdateNote(''); setRejectReason('') }}
                           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm transition"
@@ -401,6 +532,113 @@ export default function OrdersPage() {
                 Confirm Reject
               </button>
               <button onClick={() => setShowRejectModal(false)} className="flex-1 border py-2 rounded-lg hover:bg-gray-50 transition">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload PO Modal */}
+      {showPoModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowPoModal(false)}>
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white pb-4 mb-4 border-b">
+              <h2 className="text-xl font-bold">📄 Upload Purchase Order</h2>
+              <p className="text-slate-500 text-sm">Order: {selectedOrder.order_number || selectedOrder.id.slice(0, 8)}</p>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-3">Select PO File</label>
+                <label className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-orange-400 bg-orange-50 px-4 py-6 cursor-pointer hover:bg-orange-100 transition">
+                  <span className="text-center">
+                    <p className="text-2xl mb-2">📎</p>
+                    <p className="font-medium text-orange-700 text-sm">
+                      {poFile ? poFile.name : 'Choose PDF, Excel or Word file'}
+                    </p>
+                    <p className="text-xs text-orange-600 mt-1">Max 10 MB</p>
+                  </span>
+                  <input
+                    type="file"
+                    accept=".pdf,.xlsx,.xls,.doc,.docx,.csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file && file.size > 10 * 1024 * 1024) {
+                        alert('File size exceeds 10 MB')
+                        return
+                      }
+                      setPoFile(file || null)
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {selectedOrder.po_file_url && (
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-700 font-medium mb-2">✅ Current PO:</p>
+                  <a
+                    href={selectedOrder.po_file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline text-sm break-all"
+                  >
+                    View existing PO →
+                  </a>
+                </div>
+              )}
+
+              <div className="border-t pt-4">
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-sm font-semibold">📋 Additional Details (Optional)</label>
+                  <button
+                    onClick={addPoCustomField}
+                    className="text-xs bg-orange-100 text-orange-700 hover:bg-orange-200 px-2 py-1 rounded transition"
+                  >
+                    + Add Field
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {poCustomFields.map((field, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Field name (e.g., Delivery Date)"
+                        value={field.label}
+                        onChange={(e) => updatePoCustomField(index, 'label', e.target.value)}
+                        className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Value"
+                        value={field.value}
+                        onChange={(e) => updatePoCustomField(index, 'value', e.target.value)}
+                        className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                      />
+                      {poCustomFields.length > 1 && (
+                        <button
+                          onClick={() => removePoCustomField(index)}
+                          className="bg-red-100 text-red-600 hover:bg-red-200 px-3 py-2 rounded-lg text-sm transition"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6 pt-4 border-t sticky bottom-0 bg-white">
+              <button
+                onClick={() => uploadPO(selectedOrder)}
+                disabled={!poFile || uploadingPo}
+                className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white py-2 rounded-lg font-medium transition"
+              >
+                {uploadingPo ? 'Uploading...' : 'Upload PO'}
+              </button>
+              <button onClick={() => setShowPoModal(false)} className="flex-1 border py-2 rounded-lg hover:bg-gray-50 transition">
                 Cancel
               </button>
             </div>

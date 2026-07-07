@@ -13,18 +13,6 @@ export default function RegisterPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  // Pricing plans (Annual billing gives 20% discount)
-  const plans = {
-    manufacturer: {
-      basic: { monthly: 2999, yearly: 28790, features: ['50 Products', 'Email Support', 'Basic Analytics'] },
-      premium: { monthly: 9999, yearly: 95990, features: ['500 Products', 'Priority Support', 'Advanced Analytics'] },
-      enterprise: { monthly: 29999, yearly: 287990, features: ['Unlimited Products', '24/7 Support', 'API Access'] }
-    },
-    buyer: {
-      basic: { monthly: 1999, yearly: 19190, features: ['Unlimited Inquiries', 'Sample Requests', 'Wishlist'] },
-      premium: { monthly: 4999, yearly: 47990, features: ['RFQ Access', 'Priority Support', 'Volume Discounts'] }
-    }
-  }
 
   const trialDays = 14
 
@@ -45,11 +33,6 @@ export default function RegisterPage() {
           role, 
           company_name: form.company_name, 
           country: form.country,
-          subscription_plan: 'free',
-          subscription_status: 'trial',
-          trial_start_date: trialStart.toISOString().split('T')[0],
-          trial_end_date: trialEnd.toISOString().split('T')[0],
-          trial_used: true,
           approval_status: 'pending',
           is_approved: false
         } 
@@ -108,30 +91,6 @@ export default function RegisterPage() {
             <div>
               <label className="block text-sm font-medium mb-1">Password *</label>
               <input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Password (min 8 characters)" className="w-full border rounded-lg px-4 py-3" />
-            </div>
-          </div>
-
-          {/* Pricing Plans Display */}
-          <div className="border-t pt-4 mt-2">
-            <h3 className="font-semibold text-lg mb-3">📋 Plans After Trial (Cancel Anytime)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {Object.entries(plans[role as keyof typeof plans]).map(([planKey, planData]) => (
-                <div key={planKey} className="border rounded-xl p-4 bg-gray-50">
-                  <div className="text-center">
-                    <span className="font-bold text-lg capitalize">{planKey}</span>
-                    <div className="mt-2">
-                      <span className="text-2xl font-bold text-cyan-600">₹{planData.monthly.toLocaleString()}</span>
-                      <span className="text-sm text-gray-500">/month</span>
-                    </div>
-                    <div className="text-xs text-green-600">or ₹{planData.yearly.toLocaleString()}/year (Save 20%)</div>
-                    <ul className="mt-3 space-y-1 text-xs text-gray-500 text-left">
-                      {planData.features.map((feature, i) => (
-                        <li key={i}>✅ {feature}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
 

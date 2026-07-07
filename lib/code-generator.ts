@@ -1,0 +1,23 @@
+/**
+ * Generate privacy codes from IDs
+ * These codes are used to anonymize company information
+ */
+
+export function generateManufacturerCode(id: string): string {
+  // Create a hash from the ID for consistent code generation
+  const hash = id.split('-')[0].toUpperCase().substring(0, 4)
+  const num = parseInt(id.charCodeAt(0).toString()) * 1000 + (id.length * 100)
+  return `MFR-${hash}${num.toString().slice(-3)}`
+}
+
+export function generateBuyerCode(id: string): string {
+  const hash = id.split('-')[0].toUpperCase().substring(0, 4)
+  const num = parseInt(id.charCodeAt(0).toString()) * 1000 + (id.length * 100)
+  return `BYR-${hash}${num.toString().slice(-3)}`
+}
+
+export function generateAgencyCode(id: string): string {
+  const hash = id.split('-')[0].toUpperCase().substring(0, 4)
+  const num = parseInt(id.charCodeAt(0).toString()) * 1000 + (id.length * 100)
+  return `AGN-${hash}${num.toString().slice(-3)}`
+}

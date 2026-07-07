@@ -4,12 +4,15 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Navbar from '@/app/components/Navbar'
+import { generateManufacturerCode } from '@/lib/utils/codeGenerator'
+import { countries, getCountryCode } from '@/lib/countries'
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [countryCode, setCountryCode] = useState('+91')
   const router = useRouter()
   const supabase = createClient()
 
@@ -33,6 +36,7 @@ export default function ProfilePage() {
     annual_turnover: '',
     employee_count: '',
     certifications: '',
+    certification_images: [],
     major_customers: '',
     production_capacity: '',
     logo_url: '',
@@ -50,11 +54,13 @@ export default function ProfilePage() {
     
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
     setProfile(data)
+    const country = data?.country || ''
+    setCountryCode(getCountryCode(country) || '+91')
     setForm({
       company_name: data?.company_name || '',
       registered_address: data?.registered_address || '',
       factory_address: data?.factory_address || '',
-      country: data?.country || '',
+      country: country,
       contact_person: data?.contact_person || '',
       designation: data?.designation || '',
       mobile_number: data?.mobile_number || '',
@@ -70,6 +76,7 @@ export default function ProfilePage() {
       annual_turnover: data?.annual_turnover || '',
       employee_count: data?.employee_count || '',
       certifications: data?.certifications || '',
+      certification_images: data?.certification_images || [],
       major_customers: data?.major_customers || '',
       production_capacity: data?.production_capacity || '',
       logo_url: data?.logo_url || '',
@@ -131,10 +138,33 @@ export default function ProfilePage() {
     setForm({ ...form, factory_photos: form.factory_photos.filter((_, i) => i !== index) })
   }
 
+  async function handleCertificationUpload(e) {
+    const files = Array.from(e.target.files)
+    setUploading(true)
+    const newUrls = []
+    for (const file of files) {
+      try {
+        const url = await uploadImage(file, 'certification')
+        newUrls.push(url)
+      } catch (err) {
+        alert('Upload failed: ' + err.message)
+      }
+    }
+    setForm({ ...form, certification_images: [...form.certification_images, ...newUrls] })
+    setUploading(false)
+  }
+
+  function removeCertificationImage(index) {
+    setForm({ ...form, certification_images: form.certification_images.filter((_, i) => i !== index) })
+  }
+
   async function saveProfile(e) {
     e.preventDefault()
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
+    
+    // Generate manufacturer code if it doesn't exist
+    const mfrCode = profile?.manufacturer_code || generateManufacturerCode(user.id)
     
     const { error } = await supabase.from('profiles').update({
       company_name: form.company_name,
@@ -155,17 +185,20 @@ export default function ProfilePage() {
       annual_turnover: form.annual_turnover,
       employee_count: form.employee_count,
       certifications: form.certifications,
+      certification_images: form.certification_images,
       major_customers: form.major_customers,
       production_capacity: form.production_capacity,
       logo_url: form.logo_url,
       factory_photos: form.factory_photos,
-      factory_video_url: form.factory_video_url,
+      factory_video_url: form.factory_video_url
     }).eq('id', user.id)
     
     if (error) {
       alert('Error: ' + error.message)
     } else {
-      alert('Profile updated successfully!')
+      alert('✅ Profile updated successfully!')
+      // Update profile state
+      setProfile({ ...profile, ...form })
     }
     setSaving(false)
   }
@@ -183,25 +216,15 @@ export default function ProfilePage() {
             <button onClick={() => router.push('/manufacturer/dashboard')} className="text-slate-600 hover:text-slate-800">← Back</button>
           </div>
 
-          {/* ✅ UPGRADE PLAN SECTION - ADDED HERE */}
-          <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
-            <div className="flex justify-between items-center flex-wrap gap-4">
+          {/* Manufacturer Code Display */}
+          <div className="mb-6 p-4 bg-gradient-to-br from-blue-50 to-slate-50 rounded-lg border-2 border-blue-200">
+            <p className="text-xs text-slate-600 mb-2">🔐 Your Unique Manufacturer Code</p>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center font-bold text-blue-600">🏭</div>
               <div>
-                <h3 className="font-semibold text-lg">💰 Current Plan: <span className="text-purple-600 capitalize">{profile?.subscription_plan || 'Free'}</span></h3>
-                {profile?.subscription_status === 'trial' && profile?.trial_end_date && (
-                  <p className="text-sm text-green-600">🎉 Trial ends on {new Date(profile.trial_end_date).toLocaleDateString()}</p>
-                )}
-                {profile?.subscription_status === 'active' && (
-                  <p className="text-sm text-gray-500">Valid till: {profile?.subscription_end_date ? new Date(profile.subscription_end_date).toLocaleDateString() : 'N/A'}</p>
-                )}
-                <p className="text-sm text-gray-500 mt-1">Upgrade to unlock more features</p>
+                <p className="font-mono text-xl font-bold text-blue-600">{profile?.manufacturer_code || 'MFR-CODE'}</p>
+                <p className="text-xs text-slate-500">Buyers see only this code (your company details stay private until you connect)</p>
               </div>
-              <Link 
-                href="/subscription" 
-                className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-semibold transition"
-              >
-                Upgrade Plan →
-              </Link>
             </div>
           </div>
           
@@ -211,7 +234,11 @@ export default function ProfilePage() {
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">🏢 Basic Information</h2>
               <div className="grid md:grid-cols-2 gap-4">
                 <div><label className="block text-sm font-semibold mb-1">Company Name *</label><input type="text" required value={form.company_name} onChange={e => setForm({...form, company_name: e.target.value})} className="w-full border rounded-lg px-4 py-2" /></div>
-                <div><label className="block text-sm font-semibold mb-1">Country</label><input type="text" value={form.country} onChange={e => setForm({...form, country: e.target.value})} className="w-full border rounded-lg px-4 py-2" /></div>
+                <div><label className="block text-sm font-semibold mb-1">Country</label><select value={form.country} onChange={e => {
+                  const selected = e.target.value
+                  setForm({...form, country: selected})
+                  setCountryCode(getCountryCode(selected))
+                }} className="w-full border rounded-lg px-4 py-2"><option value="">Select a country</option>{countries.map(c => <option key={c.name} value={c.name}>{c.name} ({c.code})</option>)}</select></div>
                 <div className="md:col-span-2"><label className="block text-sm font-semibold mb-1">Registered Address</label><textarea rows={2} value={form.registered_address} onChange={e => setForm({...form, registered_address: e.target.value})} className="w-full border rounded-lg px-4 py-2" placeholder="Full registered address" /></div>
                 <div className="md:col-span-2"><label className="block text-sm font-semibold mb-1">Factory Address (if different)</label><textarea rows={2} value={form.factory_address} onChange={e => setForm({...form, factory_address: e.target.value})} className="w-full border rounded-lg px-4 py-2" /></div>
               </div>
@@ -224,7 +251,7 @@ export default function ProfilePage() {
                 <div><label className="block text-sm font-semibold mb-1">Contact Person</label><input type="text" value={form.contact_person} onChange={e => setForm({...form, contact_person: e.target.value})} className="w-full border rounded-lg px-4 py-2" /></div>
                 <div><label className="block text-sm font-semibold mb-1">Designation</label><input type="text" value={form.designation} onChange={e => setForm({...form, designation: e.target.value})} className="w-full border rounded-lg px-4 py-2" placeholder="CEO, Director, etc." /></div>
                 <div><label className="block text-sm font-semibold mb-1">Mobile Number</label><input type="tel" value={form.mobile_number} onChange={e => setForm({...form, mobile_number: e.target.value})} className="w-full border rounded-lg px-4 py-2" placeholder="+91 98765 43210" /></div>
-                <div><label className="block text-sm font-semibold mb-1">Phone Number</label><input type="tel" value={form.contact_phone} onChange={e => setForm({...form, contact_phone: e.target.value})} className="w-full border rounded-lg px-4 py-2" /></div>
+                <div><label className="block text-sm font-semibold mb-1">Phone Number</label><div className="flex gap-3"><div className="flex items-center bg-slate-100 px-4 rounded-lg border border-slate-300 font-semibold text-slate-700 whitespace-nowrap">{countryCode}</div><input type="tel" value={form.contact_phone} onChange={e => setForm({...form, contact_phone: e.target.value})} className="flex-1 border rounded-lg px-4 py-2" placeholder="Phone number" /></div></div>
                 <div className="md:col-span-2"><label className="block text-sm font-semibold mb-1">Email</label><input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded-lg px-4 py-2 bg-slate-50" readOnly /></div>
                 <div className="md:col-span-2"><label className="block text-sm font-semibold mb-1">Website</label><input type="url" value={form.website} onChange={e => setForm({...form, website: e.target.value})} className="w-full border rounded-lg px-4 py-2" placeholder="https://www.company.com" /></div>
               </div>
@@ -258,6 +285,20 @@ export default function ProfilePage() {
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">✅ Certifications & Customers</h2>
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="md:col-span-2"><label className="block text-sm font-semibold mb-1">Certifications</label><input type="text" value={form.certifications} onChange={e => setForm({...form, certifications: e.target.value})} className="w-full border rounded-lg px-4 py-2" placeholder="ISO, GOTS, OEKO-TEX, BSCI, SEDEX, GRS" /></div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold mb-1">📄 Certification Documents/Images</label>
+                  <div className="grid grid-cols-4 gap-2 mb-3">
+                    {form.certification_images.map((url, idx) => (
+                      <div key={idx} className="relative aspect-square bg-slate-100 rounded border-2 border-blue-200 overflow-hidden">
+                        <img src={url} className="w-full h-full object-cover rounded" alt={`Cert ${idx + 1}`} />
+                        <button type="button" onClick={() => removeCertificationImage(idx)} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs hover:bg-red-600">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                  <input type="file" accept="image/*" multiple onChange={handleCertificationUpload} disabled={uploading} className="text-sm" />
+                  {uploading && <span className="ml-2 text-sm text-blue-600">Uploading...</span>}
+                  <p className="text-xs text-slate-500 mt-1">Upload ISO, quality certifications, compliance documents (multiple images supported)</p>
+                </div>
                 <div className="md:col-span-2"><label className="block text-sm font-semibold mb-1">Major Customers / Buyers</label><input type="text" value={form.major_customers} onChange={e => setForm({...form, major_customers: e.target.value})} className="w-full border rounded-lg px-4 py-2" placeholder="Walmart, Target, H&M, Zara, etc." /></div>
               </div>
             </div>
