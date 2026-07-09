@@ -100,16 +100,14 @@ export default function AdminDashboard() {
       options: { 
         data: { 
           role: form.role, 
-          company_name: form.company_name,
-          approval_status: 'pending',
-          is_approved: false
+          company_name: form.company_name
         } 
       } 
     })
     if (error) { 
       alert('Error: ' + error.message) 
     } else { 
-      alert('User created! Pending admin approval.'); 
+      alert('User created successfully!'); 
       setShowModal(false); 
       loadAllData(); 
       setForm({ email: '', password: '', role: 'manufacturer', company_name: '' }) 

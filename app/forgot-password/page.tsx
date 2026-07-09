@@ -1,14 +1,14 @@
 'use client'
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const supabase = createClient()
+  const router = useRouter()
 
   async function handleReset(e: React.FormEvent) {
     e.preventDefault()
@@ -16,14 +16,19 @@ export default function ForgotPasswordPage() {
     setError('')
     setMessage('')
     
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+    const response = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
     })
+
+    const result = await response.json()
     
-    if (error) {
-      setError(error.message)
+    if (!response.ok) {
+      setError(result?.error || 'Failed to send OTP')
     } else {
-      setMessage('✅ Password reset link sent! Check your email.')
+      setMessage(`✅ OTP sent to ${email}. Redirecting to verification...`)
+      setTimeout(() => router.push(`/reset-password?email=${encodeURIComponent(email)}`), 1200)
     }
     setLoading(false)
   }
@@ -69,7 +74,7 @@ export default function ForgotPasswordPage() {
             disabled={loading} 
             className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50"
           >
-            {loading ? 'Sending...' : 'Send Reset Link'}
+            {loading ? 'Sending...' : 'Send OTP'}
           </button>
         </form>
         

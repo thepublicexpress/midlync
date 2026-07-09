@@ -1,8 +1,8 @@
 'use client'
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { countries } from '@/lib/countries'
 
 export default function RegisterPage() {
   const [role, setRole] = useState('manufacturer')
@@ -11,42 +11,40 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
-
-
-  const trialDays = 14
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
+
+    if (form.password.length < 8) {
+      setError('Password must be at least 8 characters long.')
+      setLoading(false)
+      return
+    }
     
-    const trialStart = new Date()
-    const trialEnd = new Date()
-    trialEnd.setDate(trialEnd.getDate() + trialDays)
-    
-    const { error } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: { 
-        data: { 
-          role, 
-          company_name: form.company_name, 
-          country: form.country,
-          approval_status: 'pending',
-          is_approved: false
-        } 
-      }
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: form.email,
+        password: form.password,
+        company_name: form.company_name,
+        country: form.country,
+        role
+      })
     })
-    
-    if (error) { 
-      setError(error.message); 
+
+    const result = await response.json()
+
+    if (!response.ok) {
+      setError(result?.error || 'Failed to send OTP')
       setLoading(false); 
       return 
     }
-    
-    setSuccess(`Registration successful! You have ${trialDays} days free trial. Your account is pending admin approval.`)
-    setTimeout(() => router.push('/login'), 3000)
+
+    setSuccess(`OTP sent to ${form.email}. Redirecting to verification...`)
+    setTimeout(() => router.push(`/verify-otp?email=${encodeURIComponent(form.email)}`), 1200)
     setLoading(false)
   }
 
@@ -55,23 +53,21 @@ export default function RegisterPage() {
       <div className="bg-white rounded-2xl p-8 w-full max-w-6xl shadow-2xl">
         <h1 className="text-4xl font-bold text-center mb-6">
           <span className="text-slate-900">Mid</span><span className="text-cyan-600">lync</span>
-          <span className="text-sm text-green-600 ml-2">✨ {trialDays} Days Free Trial</span>
         </h1>
         
-        {/* Role Selection */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <button onClick={() => setRole('manufacturer')} className={`p-3 rounded-xl border-2 transition ${role === 'manufacturer' ? 'border-cyan-600 bg-cyan-50' : 'border-slate-200'}`}>
-            🏭 Manufacturer
-          </button>
-          <button onClick={() => setRole('buyer')} className={`p-3 rounded-xl border-2 transition ${role === 'buyer' ? 'border-cyan-600 bg-cyan-50' : 'border-slate-200'}`}>
-            🛒 Buyer
-          </button>
-        </div>
-
         {error && <div className="bg-red-50 text-red-600 p-3 mb-4 text-sm rounded-lg">{error}</div>}
         {success && <div className="bg-green-50 text-green-600 p-3 mb-4 text-sm rounded-lg">{success}</div>}
 
         <form onSubmit={handleRegister} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <button type="button" onClick={() => setRole('manufacturer')} className={`p-3 rounded-xl border-2 transition ${role === 'manufacturer' ? 'border-cyan-600 bg-cyan-50' : 'border-slate-200'}`}>
+              🏭 Manufacturer
+            </button>
+            <button type="button" onClick={() => setRole('buyer')} className={`p-3 rounded-xl border-2 transition ${role === 'buyer' ? 'border-cyan-600 bg-cyan-50' : 'border-slate-200'}`}>
+              🛒 Buyer
+            </button>
+          </div>
+
           <div className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Company Name *</label>
@@ -79,7 +75,19 @@ export default function RegisterPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Country</label>
-              <input type="text" value={form.country} onChange={e => setForm({...form, country: e.target.value})} placeholder="Country" className="w-full border rounded-lg px-4 py-3" />
+              <select
+                value={form.country}
+                onChange={e => setForm({ ...form, country: e.target.value })}
+                className="w-full border rounded-lg px-4 py-3 bg-white"
+                required
+              >
+                <option value="">Select Country</option>
+                {countries.map(country => (
+                  <option key={country.name} value={country.name}>
+                    {country.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -94,12 +102,8 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <div className="bg-blue-50 p-3 rounded-lg text-center text-sm text-blue-700">
-            🎉 <strong>{trialDays}-day free trial</strong> included! No credit card required.
-          </div>
-
           <button type="submit" disabled={loading} className="w-full bg-cyan-600 text-white font-bold py-3 rounded-xl disabled:opacity-50">
-            {loading ? 'Creating Account...' : `Start ${trialDays}-Day Free Trial`}
+            {loading ? 'Creating Account...' : 'Create Account'}
           </button>
         </form>
 

@@ -88,7 +88,7 @@ export default function HomePage() {
                 href="/register"
                 className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-8 rounded-xl transition text-lg"
               >
-                Start Trading →
+                Get Started →
               </Link>
               <Link
                 href="/login"
@@ -100,7 +100,7 @@ export default function HomePage() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-20 text-center">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-6 mt-20 text-center">
             <div className="bg-black/30 backdrop-blur-md rounded-xl p-6 border border-white/20">
               <div className="text-4xl font-bold text-white">1000+</div>
               <div className="text-cyan-300 mt-2">Manufacturers</div>
@@ -112,10 +112,6 @@ export default function HomePage() {
             <div className="bg-black/30 backdrop-blur-md rounded-xl p-6 border border-white/20">
               <div className="text-4xl font-bold text-white">50+</div>
               <div className="text-cyan-300 mt-2">Countries</div>
-            </div>
-            <div className="bg-black/30 backdrop-blur-md rounded-xl p-6 border border-white/20">
-              <div className="text-4xl font-bold text-white">₹500Cr+</div>
-              <div className="text-cyan-300 mt-2">Trade Volume</div>
             </div>
           </div>
 
@@ -155,7 +151,7 @@ export default function HomePage() {
               </div>
               <div className="text-center">
                 <div className="w-20 h-20 bg-cyan-600 rounded-full flex items-center justify-center text-3xl font-bold text-white mx-auto mb-4">2</div>
-                <h3 className="text-xl font-bold text-white mb-2">Start Trading</h3>
+                <h3 className="text-xl font-bold text-white mb-2">Get Started</h3>
                 <p className="text-slate-200">List products, send inquiries, and grow your business</p>
               </div>
             </div>
@@ -179,7 +175,7 @@ export default function HomePage() {
 
           {/* Footer */}
           <footer className="mt-20 pt-8 border-t border-white/20 text-center text-slate-300 text-sm">
-            <p>&copy; 2024 Midlync — B2B Manufacturing Platform. All rights reserved.</p>
+            <p>&copy; 2026 Midlync — B2B Manufacturing Platform. All rights reserved.</p>
           </footer>
         </div>
       </div>
