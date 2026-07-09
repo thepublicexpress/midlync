@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -8,7 +8,7 @@ import { generateManufacturerCode } from '@/lib/utils/codeGenerator'
 import { countries, getCountryCode } from '@/lib/countries'
 
 export default function ProfilePage() {
-  const [profile, setProfile] = useState(null)
+  const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -16,7 +16,33 @@ export default function ProfilePage() {
   const router = useRouter()
   const supabase = createClient()
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    company_name: string
+    registered_address: string
+    factory_address: string
+    country: string
+    contact_person: string
+    designation: string
+    mobile_number: string
+    contact_phone: string
+    email: string
+    website: string
+    gst: string
+    iec_code: string
+    pan_number: string
+    business_nature: string
+    product_categories: string
+    year_established: string
+    annual_turnover: string
+    employee_count: string
+    certifications: string
+    certification_images: string[]
+    major_customers: string
+    production_capacity: string
+    logo_url: string
+    factory_photos: string[]
+    factory_video_url: string
+  }>({
     company_name: '',
     registered_address: '',
     factory_address: '',
@@ -86,82 +112,98 @@ export default function ProfilePage() {
     setLoading(false)
   }
 
-  async function uploadImage(file, type = 'logo') {
+  async function uploadMedia(file: File, folder: string) {
     setUploading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
-    const filePath = `profiles/${user.id}/${type}/${fileName}`
-    
-    const { error: uploadError } = await supabase.storage
-      .from('product-images')
-      .upload(filePath, file)
-    
-    if (uploadError) throw uploadError
-    
-    const { data: { publicUrl } } = supabase.storage
-      .from('product-images')
-      .getPublicUrl(filePath)
+    if (!user) throw new Error('Please login again')
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('folder', folder)
+
+    const response = await fetch('/api/uploads', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const result = await response.json()
+    if (!response.ok) throw new Error(result?.error || 'Upload failed')
     
     setUploading(false)
-    return publicUrl
+    return result.url
   }
 
-  async function handleLogoUpload(e) {
-    const file = e.target.files[0]
+  async function handleLogoUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
     if (!file) return
     try {
-      const url = await uploadImage(file, 'logo')
+      const url = await uploadMedia(file, 'profiles/logo')
       setForm({ ...form, logo_url: url })
     } catch (err) {
-      alert('Upload failed: ' + err.message)
+      alert('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
   }
 
-  async function handleFactoryPhotosUpload(e) {
-    const files = Array.from(e.target.files)
+  async function handleFactoryPhotosUpload(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
     setUploading(true)
-    const newUrls = []
+    const newUrls: string[] = []
     for (const file of files) {
       try {
-        const url = await uploadImage(file, 'factory')
+        const url = await uploadMedia(file, 'profiles/factory')
         newUrls.push(url)
       } catch (err) {
-        alert('Upload failed: ' + err.message)
+        alert('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
       }
     }
     setForm({ ...form, factory_photos: [...form.factory_photos, ...newUrls] })
     setUploading(false)
   }
 
-  function removeFactoryPhoto(index) {
+  function removeFactoryPhoto(index: number) {
     setForm({ ...form, factory_photos: form.factory_photos.filter((_, i) => i !== index) })
   }
 
-  async function handleCertificationUpload(e) {
-    const files = Array.from(e.target.files)
+  async function handleCertificationUpload(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
     setUploading(true)
-    const newUrls = []
+    const newUrls: string[] = []
     for (const file of files) {
       try {
-        const url = await uploadImage(file, 'certification')
+        const url = await uploadMedia(file, 'profiles/certification')
         newUrls.push(url)
       } catch (err) {
-        alert('Upload failed: ' + err.message)
+        alert('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
       }
     }
     setForm({ ...form, certification_images: [...form.certification_images, ...newUrls] })
     setUploading(false)
   }
 
-  function removeCertificationImage(index) {
+  function removeCertificationImage(index: number) {
     setForm({ ...form, certification_images: form.certification_images.filter((_, i) => i !== index) })
   }
 
-  async function saveProfile(e) {
+  async function handleFactoryVideoUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const url = await uploadMedia(file, 'profiles/factory')
+      setForm({ ...form, factory_video_url: url })
+    } catch (err) {
+      alert('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    }
+  }
+
+  async function saveProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setSaving(false)
+      router.push('/login')
+      return
+    }
     
     // Generate manufacturer code if it doesn't exist
     const mfrCode = profile?.manufacturer_code || generateManufacturerCode(user.id)
@@ -198,7 +240,7 @@ export default function ProfilePage() {
     } else {
       alert('✅ Profile updated successfully!')
       // Update profile state
-      setProfile({ ...profile, ...form })
+      setProfile({ ...(profile || {}), ...form })
     }
     setSaving(false)
   }
@@ -328,8 +370,11 @@ export default function ProfilePage() {
                 <div>
                   <label className="block text-sm font-semibold mb-1">Factory Video URL</label>
                   <input type="url" value={form.factory_video_url} onChange={e => setForm({...form, factory_video_url: e.target.value})} className="w-full border rounded-lg px-4 py-2" placeholder="YouTube or Vimeo link" />
+                  <div className="mt-2">
+                    <input type="file" accept="video/*" onChange={handleFactoryVideoUpload} className="text-sm" />
+                  </div>
                   {form.factory_video_url && (
-                    <div className="mt-2 text-xs text-slate-500">Video link saved</div>
+                    <div className="mt-2 text-xs text-slate-500">Video saved</div>
                   )}
                 </div>
               </div>

@@ -12,7 +12,7 @@ interface CompanyProfileProps {
 
 export default function CompanyProfile({ userId, role, showProducts = false, compact = false }: CompanyProfileProps) {
   const [profile, setProfile] = useState<any>(null)
-  const [products, setProducts] = useState([])
+  const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showFullDescription, setShowFullDescription] = useState(false)
   const supabase = createClient()
@@ -55,6 +55,11 @@ export default function CompanyProfile({ userId, role, showProducts = false, com
     return videoId ? `https://www.youtube.com/embed/${videoId}` : null
   }
 
+  const isDirectVideoUrl = (url: string) => {
+    if (!url) return false
+    return /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url)
+  }
+
   const getImageUrl = (images: any) => {
     if (!images) return null
     try {
@@ -79,6 +84,7 @@ export default function CompanyProfile({ userId, role, showProducts = false, com
   }
 
   const videoEmbedUrl = getYouTubeEmbedUrl(profile.factory_video_url)
+  const directVideoUrl = isDirectVideoUrl(profile.factory_video_url) ? profile.factory_video_url : null
 
   // Compact view - for product pages, order pages
   if (compact) {
@@ -161,19 +167,23 @@ export default function CompanyProfile({ userId, role, showProducts = false, com
           )}
 
           {/* Factory Video */}
-          {videoEmbedUrl && (
+          {(videoEmbedUrl || directVideoUrl) && (
             <div className="bg-white rounded-xl shadow-sm p-6 border">
               <h2 className="text-lg font-semibold mb-3">🎬 Factory Tour Video</h2>
-              <div className="relative pb-[56.25%] h-0 rounded-lg overflow-hidden">
-                <iframe
-                  src={videoEmbedUrl}
-                  title="Factory Video"
-                  className="absolute top-0 left-0 w-full h-full"
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
+              {videoEmbedUrl ? (
+                <div className="relative pb-[56.25%] h-0 rounded-lg overflow-hidden">
+                  <iframe
+                    src={videoEmbedUrl}
+                    title="Factory Video"
+                    className="absolute top-0 left-0 w-full h-full"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              ) : (
+                <video src={directVideoUrl || ''} controls className="w-full rounded-lg bg-black" />
+              )}
             </div>
           )}
 

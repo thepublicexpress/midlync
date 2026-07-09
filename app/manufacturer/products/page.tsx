@@ -80,21 +80,19 @@ export default function ProductsPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Please login again')
 
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
-    const filePath = `products/${user.id}/${fileName}`
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('folder', 'products')
 
-    const { error: uploadError } = await supabase.storage
-      .from('product-images')
-      .upload(filePath, file)
+    const response = await fetch('/api/uploads', {
+      method: 'POST',
+      body: formData,
+    })
 
-    if (uploadError) throw uploadError
+    const result = await response.json()
+    if (!response.ok) throw new Error(result?.error || 'Upload failed')
 
-    const { data: { publicUrl } } = supabase.storage
-      .from('product-images')
-      .getPublicUrl(filePath)
-
-    return publicUrl
+    return result.url as string
   }
 
   async function handleImageUpload(e: ChangeEvent<HTMLInputElement>) {

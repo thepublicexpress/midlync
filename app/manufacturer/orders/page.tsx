@@ -175,22 +175,19 @@ export default function OrdersPage() {
 
     setUploadingPo(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Please log in again')
+      const formData = new FormData()
+      formData.append('file', poFile)
+      formData.append('folder', 'purchase-orders')
 
-      const fileExt = poFile.name.split('.').pop()
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
-      const filePath = `purchase-orders/${user.id}/${order.id}/${fileName}`
+      const response = await fetch('/api/uploads', {
+        method: 'POST',
+        body: formData,
+      })
 
-      const { error: uploadError } = await supabase.storage
-        .from('po-files')
-        .upload(filePath, poFile)
+      const result = await response.json()
+      if (!response.ok) throw new Error(result?.error || 'Upload failed')
 
-      if (uploadError) throw uploadError
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('po-files')
-        .getPublicUrl(filePath)
+      const publicUrl = result.url as string
 
       const poDetails = buildPoDetailsPayload()
 

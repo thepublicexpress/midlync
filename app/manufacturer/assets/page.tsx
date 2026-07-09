@@ -1,28 +1,28 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { ChangeEvent, useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/app/components/Navbar'
 
 export default function DigitalAssetsPage() {
-  const [assets, setAssets] = useState([])
-  const [folders, setFolders] = useState([])
-  const [profile, setProfile] = useState(null)
+  const [assets, setAssets] = useState<any[]>([])
+  const [folders, setFolders] = useState<any[]>([])
+  const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const [selectedAsset, setSelectedAsset] = useState(null)
+  const [selectedAsset, setSelectedAsset] = useState<any>(null)
   const [showMoodBoardModal, setShowMoodBoardModal] = useState(false)
-  const [moodBoardImages, setMoodBoardImages] = useState([])
+  const [moodBoardImages, setMoodBoardImages] = useState<string[]>([])
   const [moodBoardDescription, setMoodBoardDescription] = useState('')
   const [moodBoardTitle, setMoodBoardTitle] = useState('')
-  const [moodBoardResult, setMoodBoardResult] = useState(null)
+  const [moodBoardResult, setMoodBoardResult] = useState<any>(null)
   const [aiProcessing, setAiProcessing] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [showFolderModal, setShowFolderModal] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const router = useRouter()
   const supabase = createClient()
-  const fileInputRef = useRef(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     loadData()
@@ -40,21 +40,28 @@ export default function DigitalAssetsPage() {
     setLoading(false)
   }
 
-  async function uploadAsset(file) {
+  async function uploadAsset(file: File) {
     setUploading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const fileName = `${Date.now()}_${file.name}`
-      const filePath = `assets/${user.id}/${fileName}`
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('folder', 'assets')
+
+      const response = await fetch('/api/uploads', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const result = await response.json()
+      if (!response.ok) throw new Error(result?.error || 'Upload failed')
+      const publicUrl = result.url
       
-      const { error: uploadError } = await supabase.storage.from('product-images').upload(filePath, file)
-      if (uploadError) throw uploadError
-      
-      const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(filePath)
-      
+      if (!user) throw new Error('Please login again')
+
       await supabase.from('digital_assets').insert({
         manufacturer_id: user.id,
-        asset_type: 'image',
+        asset_type: file.type.startsWith('video/') ? 'video' : 'image',
         file_url: publicUrl,
         title: file.name,
         size: file.size
@@ -62,12 +69,12 @@ export default function DigitalAssetsPage() {
       
       loadData()
     } catch (err) {
-      alert('Upload failed: ' + err.message)
+      alert('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
     setUploading(false)
   }
 
-  async function deleteAsset(id) {
+  async function deleteAsset(id: string) {
     if (!confirm('Delete this asset?')) return
     await supabase.from('digital_assets').delete().eq('id', id)
     loadData()
@@ -95,7 +102,7 @@ export default function DigitalAssetsPage() {
         alert('Analysis failed: ' + data.error)
       }
     } catch (err) {
-      alert('Error: ' + err.message)
+      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
     setAiProcessing(false)
   }
@@ -119,8 +126,8 @@ export default function DigitalAssetsPage() {
             <button onClick={() => fileInputRef.current?.click()} className="bg-cyan-600 text-white px-4 py-2 rounded-lg">
               📤 Upload Asset
             </button>
-            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={(e) => {
-              Array.from(e.target.files).forEach(f => uploadAsset(f))
+            <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              Array.from(e.target.files || []).forEach(f => uploadAsset(f))
               e.target.value = ''
             }} className="hidden" />
           </div>
@@ -179,11 +186,14 @@ export default function DigitalAssetsPage() {
             
             <div className="border-2 border-dashed border-slate-200 rounded-lg p-6 text-center mb-4">
               <input type="file" accept="image/*" multiple onChange={(e) => {
-                const files = Array.from(e.target.files)
+                const files = Array.from(e.target.files || [])
                 files.forEach(file => {
                   const reader = new FileReader()
                   reader.onload = (event) => {
-                    setMoodBoardImages(prev => [...prev, event.target.result])
+                    const result = event.target?.result
+                    if (typeof result === 'string') {
+                      setMoodBoardImages(prev => [...prev, result])
+                    }
                   }
                   reader.readAsDataURL(file)
                 })

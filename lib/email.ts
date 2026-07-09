@@ -24,6 +24,7 @@ function getTransporter() {
   })
 }
 
+// ─── Send OTP Email ──────────────────────────────────────
 export async function sendOTPEmail(email: string, otp: string, name?: string) {
   const transporter = getTransporter()
   const from = process.env.SMTP_FROM || 'Midlync.com <no-reply@midlync.com>'
@@ -60,4 +61,71 @@ export async function sendOTPEmail(email: string, otp: string, name?: string) {
     text: `Your Midlync OTP is ${otp}. This code expires in 5 minutes.`,
     html,
   })
+}
+
+// ─── Send Admin Email ─────────────────────────────────────
+export async function sendAdminEmail(
+  subject: string,
+  html: string,
+  to: string = 'info@midlync.com'
+) {
+  try {
+    const transporter = getTransporter()
+    const from = process.env.SMTP_FROM || 'Midlync.com <no-reply@midlync.com>'
+
+    await transporter.sendMail({
+      from,
+      to,
+      subject,
+      html,
+    })
+    console.log('✅ Admin email sent to', to)
+  } catch (error) {
+    console.error('❌ Admin email failed:', error)
+    // Don't throw – we don't want to break the main flow if email fails
+  }
+}
+
+// ─── Send Notification Email to User ─────────────────────
+export async function sendNotificationEmail(
+  to: string,
+  subject: string,
+  message: string,
+  userName?: string
+) {
+  try {
+    const transporter = getTransporter()
+    const from = process.env.SMTP_FROM || 'Midlync.com <no-reply@midlync.com>'
+    const year = new Date().getFullYear()
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head><meta charset="UTF-8"></head>
+        <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;">
+          <div style="max-width:560px;margin:0 auto;padding:32px 16px;">
+            <div style="background:#ffffff;border-radius:16px;padding:32px;border:1px solid #e5e7eb;">
+              <div style="font-size:14px;font-weight:700;letter-spacing:1px;color:#0f172a;margin-bottom:16px;">Midlync</div>
+              <h2 style="margin:0 0 12px;color:#0f172a;font-size:24px;">${subject}</h2>
+              <p style="margin:0 0 16px;color:#334155;line-height:1.6;">Hello ${userName || 'User'},</p>
+              <p style="margin:0 0 16px;color:#334155;line-height:1.6;">${message}</p>
+              <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+              <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center;">© ${year} Midlync. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `
+
+    await transporter.sendMail({
+      from,
+      to,
+      subject,
+      text: message,
+      html,
+    })
+    console.log('✅ Notification email sent to', to)
+  } catch (error) {
+    console.error('❌ Notification email failed:', error)
+  }
 }
