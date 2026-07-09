@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const email = searchParams.get('email') || ''
+  const [email, setEmail] = useState('')
   const [otp, setOtp] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -18,10 +17,14 @@ export default function ResetPasswordPage() {
   const [verifying, setVerifying] = useState(false)
 
   useEffect(() => {
-    if (!email) {
+    const params = new URLSearchParams(window.location.search)
+    const queryEmail = params.get('email') || ''
+    setEmail(queryEmail)
+
+    if (!queryEmail) {
       setError('Missing email. Please request a new reset OTP.')
     }
-  }, [email])
+  }, [])
 
   async function handleVerifyOtp(e: React.FormEvent) {
     e.preventDefault()
