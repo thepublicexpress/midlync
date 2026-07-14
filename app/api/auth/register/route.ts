@@ -1,92 +1,103 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { generateOTP } from '@/lib/otp'
 import { sendOTPEmail } from '@/lib/email'
+import { generateOTP } from '@/lib/otp'
 
-const OTP_TTL_MINUTES = 5
-
-function getSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error('Supabase admin credentials are missing')
-  }
-
-  return createClient(supabaseUrl, serviceKey)
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, name, company_name, role = 'manufacturer', country = '' } = await req.json()
+    const { email, password, name, user_type, company_name, phone, country, city, address, trade_license, gst_number } = await req.json()
 
-    if (!email || !password || !company_name) {
-      return NextResponse.json({ error: 'Email, password, and company name are required' }, { status: 400 })
+    // Basic validation
+    if (!email || !password || !user_type) {
+      return NextResponse.json({ error: 'Email, password, and user_type are required' }, { status: 400 })
     }
 
-    if (String(password).length < 8) {
-      return NextResponse.json({ error: 'Password must be at least 8 characters long' }, { status: 400 })
+    // 1. Check if user already exists in auth.users
+    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+    if (listError) throw listError
+
+    const existingUser = users.find(u => u.email === email)
+
+    if (existingUser) {
+      // If user exists and already verified => error
+      if (existingUser.email_confirmed_at) {
+        return NextResponse.json({ error: 'Email already registered and verified. Please login.' }, { status: 409 })
+      }
+
+      // If user exists but not verified => resend OTP
+      const otp = generateOTP()
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
+
+      // Upsert OTP in user_otps table
+      await supabaseAdmin
+        .from('user_otps')
+        .upsert({
+          user_id: existingUser.id,
+          otp,
+          expires_at: expiresAt,
+          verified: false,
+          attempts: 0,
+        }, { onConflict: 'user_id' })
+
+      // Send OTP email
+      await sendOTPEmail(email, otp, existingUser.user_metadata?.name || name)
+
+      return NextResponse.json({
+        success: true,
+        message: 'A new OTP has been sent to your email. Please verify.',
+        userId: existingUser.id,
+        alreadyExists: true,
+      }, { status: 200 })
     }
 
-    const supabaseAdmin = getSupabaseAdmin()
-
-    const { data: authUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+    // 2. Create new user (email_confirm = false)
+    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: false,
       user_metadata: {
-        name: name || company_name,
-        role,
+        name,
+        user_type,
         company_name,
-        country
-      }
+        phone,
+        country,
+        city,
+        address,
+        trade_license,
+        gst_number,
+      },
     })
 
-    if (createError) {
-      return NextResponse.json({ error: createError.message }, { status: 400 })
-    }
+    if (createError) throw createError
 
-    const userId = authUser.user?.id
-    if (!userId) {
-      return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
-    }
+    const userId = newUser.user.id
+    const otp = generateOTP()
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
 
-    const otp = generateOTP(6)
-    const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000).toISOString()
+    // Insert OTP record
+    await supabaseAdmin
+      .from('user_otps')
+      .insert({
+        user_id: userId,
+        otp,
+        expires_at: expiresAt,
+      })
 
-    const { error: otpError } = await supabaseAdmin.from('user_otps').insert({
-      user_id: userId,
-      otp,
-      purpose: 'email_verification',
-      expires_at: expiresAt,
-    })
-
-    if (otpError) {
-      return NextResponse.json({ error: otpError.message }, { status: 500 })
-    }
-
-    try {
-      await sendOTPEmail(email, otp, name || company_name)
-    } catch (emailError) {
-      console.error('Email send failed:', emailError)
-      return NextResponse.json({
-        success: true,
-        message: 'Account created, but OTP email could not be sent. Please resend OTP.',
-        userId
-      }, { status: 201 })
-    }
+    // Send OTP email
+    await sendOTPEmail(email, otp, name)
 
     return NextResponse.json({
       success: true,
       message: 'OTP sent to your email. Please verify.',
       userId,
-      email,
     }, { status: 201 })
-  } catch (error) {
+
+  } catch (error: any) {
     console.error('Registration error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Registration failed' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error.message || 'Registration failed' }, { status: 500 })
   }
 }
