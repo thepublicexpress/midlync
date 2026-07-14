@@ -2,121 +2,82 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendAdminEmail } from '@/lib/email'
 
-const supabaseUrl = 'https://grsapzroyfcueysrmedk.supabase.co'
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdyc2FwenJveWZjdWV5c3JtZWRrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODg5OTU3NiwiZXhwIjoyMDk0NDc1NTc2fQ.jeqvYugmVoR4xaQRJSgEsXUXgY-9JCPqARTy3lu8FZ0'
-
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
+// Helper to ensure a profile exists for a user
+async function ensureProfile(userId: string, email?: string) {
+  const { data: existing } = await supabaseAdmin
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single()
+  if (existing) return existing
+
+  // Fetch user from auth to get metadata
+  const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(userId)
+  const meta = user?.user_metadata || {}
+  const role = meta.user_type || 'buyer'
+  const code = role === 'manufacturer'
+    ? `MFR-${Math.floor(1000000 + Math.random() * 9000000)}`
+    : `BYR-${Math.floor(1000000 + Math.random() * 9000000)}`
+
+  const profile = {
+    id: userId,
+    email: user?.email || email,
+    role,
+    company_name: meta.company_name || 'Unknown',
+    is_approved: false,
+    approval_status: 'pending',
+    created_at: new Date().toISOString(),
+    ...(role === 'manufacturer' ? { manufacturer_code: code } : { buyer_code: code }),
+  }
+  await supabaseAdmin.from('profiles').insert(profile)
+  return profile
+}
 
 // Helper to fetch admin user IDs
 async function getAdminUserIds() {
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .select('id')
-    .eq('user_type', 'agency')
-  if (error) {
-    console.error('Error fetching admins:', error)
-    return []
-  }
+    .eq('role', 'admin')
+  if (error) return []
   return data.map((d: any) => d.id)
-}
-
-// Helper to ensure pending connection grant
-async function ensurePendingConnectionGrant(buyerId: string, manufacturerId: string) {
-  const { data: existing, error: existingError } = await supabaseAdmin
-    .from('connection_grants')
-    .select('id, status')
-    .eq('buyer_id', buyerId)
-    .eq('manufacturer_id', manufacturerId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (existingError) {
-    console.error('⚠️ Failed to check existing connection grant:', existingError)
-    return
-  }
-
-  if (!existing) {
-    const { error: insertError } = await supabaseAdmin
-      .from('connection_grants')
-      .insert({
-        buyer_id: buyerId,
-        manufacturer_id: manufacturerId,
-        status: 'pending',
-      })
-    if (insertError) {
-      console.error('⚠️ Failed to create pending connection grant:', insertError)
-    }
-    return
-  }
-
-  if (existing.status !== 'active') {
-    const { error: updateError } = await supabaseAdmin
-      .from('connection_grants')
-      .update({ status: 'pending' })
-      .eq('id', existing.id)
-    if (updateError) {
-      console.error('⚠️ Failed to update connection grant to pending:', updateError)
-    }
-  }
 }
 
 // ─── POST ────────────────────────────────────────────────
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { product_id, buyer_id, manufacturer_id, message, quantity, source_role } = body
+    const { product_id, buyer_id, message, quantity, source_role } = body
     const sourceRole = source_role === 'manufacturer' ? 'manufacturer' : 'buyer'
 
-    console.log('📩 Received inquiry request:', { product_id, buyer_id, message: message?.substring(0, 50), quantity })
-
-    // Validation
+    // 1. Validate
     if (!product_id || !buyer_id || !message) {
       return NextResponse.json({ error: 'Product ID, Buyer ID, and message are required' }, { status: 400 })
     }
 
-    // Get product and its manufacturer
+    // 2. Get product & manufacturer
     const { data: product, error: productError } = await supabaseAdmin
       .from('products')
       .select('manufacturer_id, title')
       .eq('id', product_id)
       .single()
-
     if (productError || !product) {
-      console.error('❌ Product error:', productError)
       return NextResponse.json({ error: 'Product not found' }, { status: 404 })
     }
-
     if (!product.manufacturer_id) {
       return NextResponse.json({ error: 'Product has no manufacturer' }, { status: 400 })
     }
-
-    // If manufacturer is sending, ensure they are the product owner
-    if (sourceRole === 'manufacturer' && manufacturer_id && manufacturer_id !== product.manufacturer_id) {
-      return NextResponse.json({ error: 'Product does not belong to this manufacturer' }, { status: 400 })
-    }
-
     const inquiryManufacturerId = product.manufacturer_id
-    await ensurePendingConnectionGrant(buyer_id, inquiryManufacturerId)
 
-    // Get buyer & manufacturer profiles (for codes and names)
-    const { data: buyerProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('buyer_code, company_name, email')
-      .eq('id', buyer_id)
-      .single()
+    // 3. Ensure buyer & manufacturer profiles exist
+    const buyerProfile = await ensureProfile(buyer_id)
+    const mfrProfile = await ensureProfile(inquiryManufacturerId)
 
-    const { data: mfrProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('manufacturer_code, company_name, email')
-      .eq('id', inquiryManufacturerId)
-      .single()
-
-    if (!buyerProfile || !mfrProfile) {
-      return NextResponse.json({ error: 'Buyer or manufacturer profile not found' }, { status: 404 })
-    }
-
-    // Insert inquiry with status 'pending_admin'
+    // 4. Insert inquiry (pending_admin)
     const { data: inquiry, error: inquiryError } = await supabaseAdmin
       .from('product_inquiries')
       .insert({
@@ -129,32 +90,29 @@ export async function POST(request: Request) {
       })
       .select()
       .single()
-
     if (inquiryError) {
-      console.error('❌ Inquiry insert error:', inquiryError)
+      console.error('Inquiry insert error:', inquiryError)
       return NextResponse.json({ error: inquiryError.message }, { status: 500 })
     }
 
-    console.log('✅ Inquiry inserted:', inquiry.id)
-
-    // ── Send notifications with ANONYMITY ──
+    // ── Notify parties ──
 
     if (sourceRole === 'buyer') {
-      // Buyer sent → notify manufacturer (show buyer_code only)
+      // Manufacturer gets only buyer_code
       await supabaseAdmin.from('notifications').insert({
         user_id: inquiryManufacturerId,
         title: '📩 New Inquiry from Buyer',
-        message: `Buyer (${buyerProfile.buyer_code}) is interested in "${product.title}". Admin will review and connect you.`,
+        message: `Buyer (${buyerProfile.buyer_code || 'BYR-CODE'}) is interested in "${product.title}". Admin will review and connect you.`,
         type: 'inquiry',
         related_id: inquiry.id,
         is_read: false,
       })
     } else {
-      // Manufacturer sent → notify buyer (show manufacturer_code only)
+      // Buyer gets only manufacturer_code
       await supabaseAdmin.from('notifications').insert({
         user_id: buyer_id,
         title: '📩 New Inquiry from Manufacturer',
-        message: `Manufacturer (${mfrProfile.manufacturer_code}) has reached out regarding "${product.title}". Admin will coordinate.`,
+        message: `Manufacturer (${mfrProfile.manufacturer_code || 'MFR-CODE'}) has reached out regarding "${product.title}". Admin will coordinate.`,
         type: 'inquiry',
         related_id: inquiry.id,
         is_read: false,
@@ -167,14 +125,14 @@ export async function POST(request: Request) {
       const adminNotifs = adminIds.map((adminId: string) => ({
         user_id: adminId,
         title: sourceRole === 'buyer'
-          ? `📨 New Buyer Inquiry (${buyerProfile.buyer_code} → ${mfrProfile.manufacturer_code})`
-          : `📨 New Manufacturer Inquiry (${mfrProfile.manufacturer_code} → ${buyerProfile.buyer_code})`,
+          ? `📨 New Buyer Inquiry (${buyerProfile.buyer_code || 'BYR'} → ${mfrProfile.manufacturer_code || 'MFR'})`
+          : `📨 New Manufacturer Inquiry (${mfrProfile.manufacturer_code || 'MFR'} → ${buyerProfile.buyer_code || 'BYR'})`,
         message: `
-          Product: ${product.title}
-          ${sourceRole === 'buyer' ? 'Buyer' : 'Manufacturer'}: ${sourceRole === 'buyer' ? buyerProfile.company_name : mfrProfile.company_name} (${sourceRole === 'buyer' ? buyerProfile.buyer_code : mfrProfile.manufacturer_code})
-          ${sourceRole === 'buyer' ? 'Manufacturer' : 'Buyer'}: ${sourceRole === 'buyer' ? mfrProfile.company_name : buyerProfile.company_name} (${sourceRole === 'buyer' ? mfrProfile.manufacturer_code : buyerProfile.buyer_code})
-          Message: ${message}
-          Quantity: ${quantity || 'N/A'}
+Product: ${product.title}
+${sourceRole === 'buyer' ? 'Buyer' : 'Manufacturer'}: ${buyerProfile.company_name} (${buyerProfile.buyer_code})
+${sourceRole === 'buyer' ? 'Manufacturer' : 'Buyer'}: ${mfrProfile.company_name} (${mfrProfile.manufacturer_code})
+Message: ${message}
+Quantity: ${quantity || 'N/A'}
         `.trim(),
         type: 'inquiry',
         related_id: inquiry.id,
@@ -183,7 +141,7 @@ export async function POST(request: Request) {
       await supabaseAdmin.from('notifications').insert(adminNotifs)
     }
 
-    // ── Send admin email ──
+    // ── Send email to info@midlync.com ──
     const adminEmailSubject = sourceRole === 'buyer'
       ? `📨 New Buyer Inquiry: ${product.title}`
       : `📨 New Manufacturer Inquiry: ${product.title}`
@@ -192,19 +150,16 @@ export async function POST(request: Request) {
       <h2>New Inquiry Received</h2>
       <p><strong>Product:</strong> ${product.title}</p>
       <p><strong>${sourceRole === 'buyer' ? 'Buyer' : 'Manufacturer'}:</strong> 
-        ${sourceRole === 'buyer' ? buyerProfile.company_name : mfrProfile.company_name} 
-        (${sourceRole === 'buyer' ? buyerProfile.buyer_code : mfrProfile.manufacturer_code})
+        ${buyerProfile.company_name} (${buyerProfile.buyer_code})
       </p>
       <p><strong>${sourceRole === 'buyer' ? 'Manufacturer' : 'Buyer'}:</strong> 
-        ${sourceRole === 'buyer' ? mfrProfile.company_name : buyerProfile.company_name} 
-        (${sourceRole === 'buyer' ? mfrProfile.manufacturer_code : buyerProfile.buyer_code})
+        ${mfrProfile.company_name} (${mfrProfile.manufacturer_code})
       </p>
       <p><strong>Message:</strong> ${message}</p>
       <p><strong>Quantity:</strong> ${quantity || 'N/A'}</p>
-      <p><a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/admin/inquiries">View in Admin Dashboard</a></p>
+      <p><a href="${process.env.NEXTAUTH_URL || 'https://midlync.com'}/admin/inquiries">View in Admin Dashboard</a></p>
     `
-    // Don't await – fire and forget
-    sendAdminEmail(adminEmailSubject, adminEmailHtml)
+    await sendAdminEmail(adminEmailSubject, adminEmailHtml)
 
     return NextResponse.json({
       success: true,
@@ -214,19 +169,18 @@ export async function POST(request: Request) {
         : 'Inquiry sent! Admin will review and connect you with the buyer.'
     })
 
-  } catch (error) {
-    console.error('❌ Server error:', error)
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 })
+  } catch (error: any) {
+    console.error('Inquiry error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
 
-// ─── GET ─────────────────────────────────────────────────
+// ─── GET (same as before) ────────────────────────────────
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
-    const role = searchParams.get('role') // 'buyer' | 'manufacturer' | 'admin'
-
+    const role = searchParams.get('role')
     if (!userId) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
@@ -240,23 +194,18 @@ export async function GET(request: Request) {
         manufacturer:profiles!manufacturer_id(company_name, email, manufacturer_code)
       `)
 
-    if (role === 'buyer') {
-      query = query.eq('buyer_id', userId)
-    } else if (role === 'manufacturer') {
-      query = query.eq('manufacturer_id', userId)
-    }
-    // if admin, no filter – show all
+    if (role === 'buyer') query = query.eq('buyer_id', userId)
+    else if (role === 'manufacturer') query = query.eq('manufacturer_id', userId)
+    // if admin, no filter
 
     const { data, error } = await query.order('created_at', { ascending: false })
-
     if (error) {
-      console.error('❌ Inquiry fetch error:', error)
+      console.error('Inquiry fetch error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
-
     return NextResponse.json({ success: true, inquiries: data })
-  } catch (error) {
-    console.error('Error fetching inquiries:', error)
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 })
+  } catch (error: any) {
+    console.error('Fetch inquiries error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
