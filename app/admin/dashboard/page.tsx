@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -24,10 +24,10 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('pending')
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRole, setFilterRole] = useState('all')
-  const [currentSection, setCurrentSection] = useState('users') // 'users' | 'orders' | 'inquiries'
+  const [currentSection, setCurrentSection] = useState('users')
   const [notifyingOrderId, setNotifyingOrderId] = useState<string | null>(null)
   
-  // 🔔 New states for notifications & inquiries
+  // 🔔 Notifications & Inquiries state
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false)
@@ -36,27 +36,50 @@ export default function AdminDashboard() {
   
   const router = useRouter()
   const supabase = createClient()
+  
+  // Store channel references for cleanup
+  const notificationChannelRef = useRef<any>(null)
+  const inquiryChannelRef = useRef<any>(null)
 
   useEffect(() => {
     checkAdminAndLoad()
+    // Cleanup subscriptions on unmount
+    return () => {
+      if (notificationChannelRef.current) {
+        supabase.removeChannel(notificationChannelRef.current)
+      }
+      if (inquiryChannelRef.current) {
+        supabase.removeChannel(inquiryChannelRef.current)
+      }
+    }
   }, [])
 
+  // ─── Main Load ────────────────────────────────────────────────
   async function checkAdminAndLoad() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/admin/login'); return }
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+      
       if (profile?.role !== 'admin') { router.push('/'); return }
+      
       await loadAllData()
       await loadNotifications()
       await loadInquiries()
-      subscribeToNotifications()
-      subscribeToInquiries()
+      await subscribeToNotifications()
+      await subscribeToInquiries()
+      
     } catch (err) {
       console.error(err)
     }
   }
 
+  // ─── Load Data ────────────────────────────────────────────────
   async function loadAllData() {
     setLoading(true)
     const { data: usersData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
@@ -91,7 +114,6 @@ export default function AdminDashboard() {
   async function loadInquiries() {
     setInquiryLoading(true)
     try {
-      // Use admin view – fetch all inquiries with relations
       const { data, error } = await supabase
         .from('product_inquiries')
         .select(`
@@ -109,50 +131,68 @@ export default function AdminDashboard() {
     }
   }
 
-  // 🔔 Realtime subscription for notifications
-  function subscribeToNotifications() {
-    const { data: { user } } = supabase.auth.getUser()
-    if (!user) return
-    const channel = supabase
-      .channel('admin-notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          setNotifications(prev => [payload.new, ...prev])
-          setUnreadCount(prev => prev + 1)
-        }
-      )
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
+  // 🔔 Realtime subscription for notifications (FIXED: async/await)
+  async function subscribeToNotifications() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      if (notificationChannelRef.current) {
+        supabase.removeChannel(notificationChannelRef.current)
+      }
+
+      const channel = supabase
+        .channel('admin-notifications')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            setNotifications(prev => [payload.new, ...prev])
+            setUnreadCount(prev => prev + 1)
+          }
+        )
+        .subscribe()
+
+      notificationChannelRef.current = channel
+    } catch (error) {
+      console.error('Notification subscription error:', error)
+    }
   }
 
   // 📋 Realtime subscription for inquiries
-  function subscribeToInquiries() {
-    const channel = supabase
-      .channel('admin-inquiries')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'product_inquiries',
-        },
-        (payload) => {
-          // Reload inquiries when any change happens
-          loadInquiries()
-        }
-      )
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
+  async function subscribeToInquiries() {
+    try {
+      if (inquiryChannelRef.current) {
+        supabase.removeChannel(inquiryChannelRef.current)
+      }
+
+      const channel = supabase
+        .channel('admin-inquiries')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'product_inquiries',
+          },
+          () => {
+            loadInquiries()
+          }
+        )
+        .subscribe()
+
+      inquiryChannelRef.current = channel
+    } catch (error) {
+      console.error('Inquiry subscription error:', error)
+    }
   }
 
-  // ─── User Management Functions (existing) ─────────────────────
+  // ─── User Management ──────────────────────────────────────────
   async function approveUser(userId: string) {
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('profiles').update({ 
@@ -202,7 +242,7 @@ export default function AdminDashboard() {
     router.push('/admin/login')
   }
 
-  // ─── Order Notification (existing) ──────────────────────────
+  // ─── Order Notification ──────────────────────────────────────
   async function notifyManufacturer(order: any) {
     try {
       setNotifyingOrderId(order.id)
@@ -234,7 +274,7 @@ export default function AdminDashboard() {
       })
       if (res.ok) {
         alert(`✅ Inquiry ${action === 'approve_connection' ? 'approved' : 'rejected'}!`)
-        loadInquiries() // refresh list
+        loadInquiries()
       } else {
         const err = await res.json()
         alert('❌ Error: ' + err.error)
@@ -245,7 +285,7 @@ export default function AdminDashboard() {
     }
   }
 
-  // ─── Notification Helpers ─────────────────────────────────────
+  // ─── Notification Helpers ────────────────────────────────────
   async function markNotificationRead(notificationId: string) {
     await supabase.from('notifications').update({ is_read: true }).eq('id', notificationId)
     setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n))
@@ -290,6 +330,7 @@ export default function AdminDashboard() {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>
   }
 
+  // ─── Render ──────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Navbar with Notification Bell */}
@@ -555,7 +596,8 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* Modals – existing ones unchanged */}
+      {/* ─── Modals ────────────────────────────────────────────── */}
+
       {/* Create User Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowModal(false)}>

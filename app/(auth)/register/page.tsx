@@ -1,116 +1,117 @@
-'use client'
-import { useState } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { countries } from '@/lib/countries'
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { sendOTPEmail } from '@/lib/email'
+import { generateOTP } from '@/lib/otp'
 
-export default function RegisterPage() {
-  const [role, setRole] = useState('manufacturer')
-  const [form, setForm] = useState({ email: '', password: '', company_name: '', country: '' })
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [loading, setLoading] = useState(false)
-  const router = useRouter()
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-  async function handleRegister(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { email, password, user_type, company_name, phone, country, city, address, trade_license, gst_number } = body
 
-    if (form.password.length < 8) {
-      setError('Password must be at least 8 characters long.')
-      setLoading(false)
-      return
+    if (!email || !password || !user_type) {
+      return NextResponse.json({ error: 'Email, password, and user_type are required' }, { status: 400 })
     }
-    
-    const response = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: form.email,
-        password: form.password,
-        company_name: form.company_name,
-        country: form.country,
-        role
-      })
+
+    // 1. Check if user exists
+    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+    if (listError) throw listError
+    const existingUser = users.find(u => u.email === email)
+
+    if (existingUser) {
+      if (existingUser.email_confirmed_at) {
+        return NextResponse.json({ error: 'Email already registered and verified. Please login.' }, { status: 409 })
+      }
+      // Resend OTP for unverified
+      const otp = generateOTP()
+      await supabaseAdmin
+        .from('user_otps')
+        .upsert({
+          user_id: existingUser.id,
+          otp,
+          expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          verified: false,
+          attempts: 0,
+        }, { onConflict: 'user_id' })
+      await sendOTPEmail(email, otp, existingUser.user_metadata?.name || company_name)
+      return NextResponse.json({
+        success: true,
+        message: 'OTP resent to your email. Please verify.',
+        userId: existingUser.id,
+        alreadyExists: true,
+      }, { status: 200 })
+    }
+
+    // 2. Create new user (email_confirm = false)
+    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: false,
+      user_metadata: { name: company_name, user_type, company_name, phone, country, city, address, trade_license, gst_number },
     })
+    if (createError) throw createError
 
-    const result = await response.json()
+    const userId = newUser.user.id
 
-    if (!response.ok) {
-      setError(result?.error || 'Failed to send OTP')
-      setLoading(false); 
-      return 
+    // 3. Create profile entry (including buyer_code / manufacturer_code)
+    const isManufacturer = user_type === 'manufacturer'
+    const code = isManufacturer
+      ? `MFR-${Math.floor(1000000 + Math.random() * 9000000)}`
+      : `BYR-${Math.floor(1000000 + Math.random() * 9000000)}`
+
+    const profileData: any = {
+      id: userId,
+      email,
+      role: user_type,
+      company_name,
+      phone,
+      country,
+      city,
+      address,
+      trade_license: trade_license || null,
+      gst_number: gst_number || null,
+      is_approved: false,
+      approval_status: 'pending',
+      created_at: new Date().toISOString(),
+    }
+    if (isManufacturer) {
+      profileData.manufacturer_code = code
+    } else {
+      profileData.buyer_code = code
     }
 
-    setSuccess(`OTP sent to ${form.email}. Redirecting to verification...`)
-    setTimeout(() => router.push(`/verify-otp?email=${encodeURIComponent(form.email)}`), 1200)
-    setLoading(false)
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .insert(profileData)
+
+    if (profileError) {
+      console.error('Profile insert error:', profileError)
+      // Continue anyway – we'll handle missing profiles in inquiries API
+    }
+
+    // 4. Store OTP
+    const otp = generateOTP()
+    await supabaseAdmin
+      .from('user_otps')
+      .insert({
+        user_id: userId,
+        otp,
+        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      })
+
+    await sendOTPEmail(email, otp, company_name)
+
+    return NextResponse.json({
+      success: true,
+      message: 'OTP sent to your email. Please verify.',
+      userId,
+    }, { status: 201 })
+
+  } catch (error: any) {
+    console.error('Registration error:', error)
+    return NextResponse.json({ error: error.message || 'Registration failed' }, { status: 500 })
   }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-cyan-800 flex items-center justify-center px-4 py-10">
-      <div className="bg-white rounded-2xl p-8 w-full max-w-6xl shadow-2xl">
-        <h1 className="text-4xl font-bold text-center mb-6">
-          <span className="text-slate-900">Mid</span><span className="text-cyan-600">lync</span>
-        </h1>
-        
-        {error && <div className="bg-red-50 text-red-600 p-3 mb-4 text-sm rounded-lg">{error}</div>}
-        {success && <div className="bg-green-50 text-green-600 p-3 mb-4 text-sm rounded-lg">{success}</div>}
-
-        <form onSubmit={handleRegister} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 mb-6">
-            <button type="button" onClick={() => setRole('manufacturer')} className={`p-3 rounded-xl border-2 transition ${role === 'manufacturer' ? 'border-cyan-600 bg-cyan-50' : 'border-slate-200'}`}>
-              🏭 Manufacturer
-            </button>
-            <button type="button" onClick={() => setRole('buyer')} className={`p-3 rounded-xl border-2 transition ${role === 'buyer' ? 'border-cyan-600 bg-cyan-50' : 'border-slate-200'}`}>
-              🛒 Buyer
-            </button>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Company Name *</label>
-              <input type="text" required value={form.company_name} onChange={e => setForm({...form, company_name: e.target.value})} placeholder="Company Name" className="w-full border rounded-lg px-4 py-3" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Country</label>
-              <select
-                value={form.country}
-                onChange={e => setForm({ ...form, country: e.target.value })}
-                className="w-full border rounded-lg px-4 py-3 bg-white"
-                required
-              >
-                <option value="">Select Country</option>
-                {countries.map(country => (
-                  <option key={country.name} value={country.name}>
-                    {country.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Email *</label>
-              <input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="Email" className="w-full border rounded-lg px-4 py-3" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Password *</label>
-              <input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Password (min 8 characters)" className="w-full border rounded-lg px-4 py-3" />
-            </div>
-          </div>
-
-          <button type="submit" disabled={loading} className="w-full bg-cyan-600 text-white font-bold py-3 rounded-xl disabled:opacity-50">
-            {loading ? 'Creating Account...' : 'Create Account'}
-          </button>
-        </form>
-
-        <p className="text-center text-sm mt-6">
-          Have an account? <Link href="/login" className="text-cyan-600">Login</Link>
-        </p>
-      </div>
-    </div>
-  )
 }
