@@ -15,6 +15,8 @@ export default function ManufacturerProductDetail() {
   const [lightboxImage, setLightboxImage] = useState('')
   const [showQR, setShowQR] = useState(false)
   const [showFullDetails, setShowFullDetails] = useState(false)
+  const [allImages, setAllImages] = useState<string[]>([])
+  const [productImages, setProductImages] = useState<any[]>([])
   const params = useParams()
   const router = useRouter()
   const supabase = createClient()
@@ -36,6 +38,7 @@ export default function ManufacturerProductDetail() {
     if (!params?.id) return
     setLoading(true)
 
+    // 1. Fetch product data
     const { data: productData } = await supabase
       .from('products')
       .select('*')
@@ -43,20 +46,36 @@ export default function ManufacturerProductDetail() {
       .single()
 
     setProduct(productData)
+
+    // 2. Fetch all images from product_images table (multi‑angle)
+    const { data: imagesData } = await supabase
+      .from('product_images')
+      .select('*')
+      .eq('product_id', params.id)
+      .order('sort_order', { ascending: true })
+
+    setProductImages(imagesData || [])
+
+    // 3. Build combined image list (from product.images + product_images)
+    let combined: string[] = []
+    if (productData?.images && Array.isArray(productData.images)) {
+      combined = [...productData.images]
+    }
+    if (imagesData && imagesData.length > 0) {
+      const imageUrls = imagesData.map(img => img.image_url)
+      // Merge without duplicates
+      combined = [...combined, ...imageUrls.filter(url => !combined.includes(url))]
+    }
+    // If still empty, fallback to product.image_url
+    if (combined.length === 0 && productData?.image_url) {
+      combined = [productData.image_url]
+    }
+    setAllImages(combined)
+
     setLoading(false)
   }
 
-  const getImages = () => {
-    if (product?.images && Array.isArray(product.images) && product.images.length > 0) {
-      return product.images
-    }
-    if (product?.image_url) {
-      return [product.image_url]
-    }
-    return []
-  }
-
-  const images = getImages()
+  const images = allImages
 
   // Parse specifications if exists
   const getSpecifications = () => {
@@ -202,8 +221,9 @@ export default function ManufacturerProductDetail() {
                 </div>
               </div>
 
+              {/* Thumbnails - show all images as scrollable row */}
               {images.length > 1 && (
-                <div className="flex gap-3 mt-4 overflow-x-auto pb-2 justify-center">
+                <div className="flex gap-3 mt-4 overflow-x-auto pb-2 justify-start">
                   {images.map((img, idx) => (
                     <button
                       key={idx}
@@ -214,10 +234,13 @@ export default function ManufacturerProductDetail() {
                           : 'border-gray-200 hover:border-gray-400'
                       }`}
                     >
-                      <img src={img} alt="" className="w-full h-full object-cover" />
+                      <img src={img} alt={`Angle ${idx+1}`} className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>
+              )}
+              {images.length === 0 && (
+                <p className="text-sm text-gray-400 text-center mt-2">No images uploaded yet</p>
               )}
             </div>
 

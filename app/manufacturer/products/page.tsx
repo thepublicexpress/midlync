@@ -26,6 +26,10 @@ export default function ProductsPage() {
   const router = useRouter()
   const supabase = createClient()
 
+  // State for images: previews and file objects
+  const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
+
   const [form, setForm] = useState<{
     title: string
     description: string
@@ -33,7 +37,7 @@ export default function ProductsPage() {
     currency: string
     moq: string
     category: string
-    images: string[]
+    images: string[] // URLs stored after upload
     image_url: string
   }>({
     title: '',
@@ -76,13 +80,12 @@ export default function ProductsPage() {
     setLoading(false)
   }
 
-  async function uploadImage(file: File) {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Please login again')
-
+  // ── Image Upload Helper (multiple files) ──
+  async function uploadProductImages(files: File[], productId: string): Promise<string[]> {
     const formData = new FormData()
-    formData.append('file', file)
+    files.forEach(file => formData.append('files', file))
     formData.append('folder', 'products')
+    formData.append('product_id', productId)
 
     const response = await fetch('/api/uploads', {
       method: 'POST',
@@ -91,30 +94,96 @@ export default function ProductsPage() {
 
     const result = await response.json()
     if (!response.ok) throw new Error(result?.error || 'Upload failed')
-
-    return result.url as string
+    return result.urls || []
   }
 
-  async function handleImageUpload(e: ChangeEvent<HTMLInputElement>) {
+  // ── Handle Image Selection ──
+  function handleImageSelect(e: ChangeEvent<HTMLInputElement>) {
     const files = e.target.files
     if (!files?.length) return
-    setUploading(true)
-    const newUrls: string[] = []
-    for (const file of Array.from(files)) {
-      try {
-        const url = await uploadImage(file)
-        newUrls.push(url)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error'
-        alert('Upload failed: ' + message)
-      }
-    }
-    setForm({ ...form, images: [...form.images, ...newUrls] })
-    setUploading(false)
+    const fileArray = Array.from(files)
+    setImageFiles(prev => [...prev, ...fileArray])
+    // Generate previews
+    const newPreviews = fileArray.map(file => URL.createObjectURL(file))
+    setImagePreviews(prev => [...prev, ...newPreviews])
+    e.target.value = '' // allow re-selection
   }
 
   function removeImage(index: number) {
-    setForm({ ...form, images: form.images.filter((_, i) => i !== index) })
+    setImageFiles(prev => prev.filter((_, i) => i !== index))
+    setImagePreviews(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // ── Save Product (with multi-image upload) ──
+  async function saveProduct(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    setUploading(true)
+
+    try {
+      // 1. Build product data (without images)
+      const productData = {
+        manufacturer_id: user.id,
+        title: form.title,
+        description: form.description,
+        price_per_unit: parseFloat(form.price_per_unit) || 0,
+        currency: form.currency,
+        moq: parseInt(form.moq) || 0,
+        category: form.category,
+        status: 'active',
+        specifications: buildSpecificationsPayload(),
+      }
+
+      let productId: string
+
+      if (editingProduct) {
+        // Update existing product (keep images as is)
+        const { error } = await supabase
+          .from('products')
+          .update(productData)
+          .eq('id', editingProduct.id)
+        if (error) throw error
+        productId = editingProduct.id
+      } else {
+        // Insert new product
+        const { data, error } = await supabase
+          .from('products')
+          .insert(productData)
+          .select('id')
+          .single()
+        if (error) throw error
+        productId = data.id
+      }
+
+      // 2. If there are new images, upload them
+      if (imageFiles.length > 0) {
+        const urls = await uploadProductImages(imageFiles, productId)
+        // Update product with image URLs (store first as primary, all in images array)
+        const primaryImage = urls[0] || ''
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({
+            image_url: primaryImage,
+            images: urls,
+          })
+          .eq('id', productId)
+        if (updateError) throw updateError
+
+        // Clear image state after successful upload
+        setImageFiles([])
+        setImagePreviews([])
+      }
+
+      setShowModal(false)
+      await loadProducts()
+      alert(editingProduct ? 'Product updated successfully!' : 'Product created with images!')
+    } catch (error: any) {
+      alert('Error: ' + (error.message || 'Unknown error'))
+    } finally {
+      setUploading(false)
+    }
   }
 
   function addCustomField() {
@@ -134,7 +203,6 @@ export default function ProductsPage() {
 
   function parseCustomFields(value: unknown): CustomField[] {
     if (!value) return [{ label: '', value: '' }]
-
     if (Array.isArray(value)) {
       return value.map((item) => {
         if (typeof item === 'string') return { label: item, value: '' }
@@ -147,14 +215,12 @@ export default function ProductsPage() {
         return { label: '', value: '' }
       }).filter((item) => item.label || item.value)
     }
-
     if (typeof value === 'object') {
       return Object.entries(value).map(([label, val]) => ({
         label,
         value: String(val),
       }))
     }
-
     if (typeof value === 'string') {
       try {
         const parsed = JSON.parse(value)
@@ -163,7 +229,6 @@ export default function ProductsPage() {
         return [{ label: '', value: value }]
       }
     }
-
     return [{ label: '', value: '' }]
   }
 
@@ -179,18 +244,11 @@ export default function ProductsPage() {
 
   function normalizeImages(value: unknown): string[] {
     if (Array.isArray(value)) {
-      return value
-        .filter(Boolean)
-        .map((item) => String(item))
+      return value.filter(Boolean).map((item) => String(item))
     }
-
     if (typeof value === 'string') {
-      return value
-        .split(/,|;|\n/)
-        .map((item) => item.trim())
-        .filter(Boolean)
+      return value.split(/,|;|\n/).map((item) => item.trim()).filter(Boolean)
     }
-
     return []
   }
 
@@ -243,46 +301,17 @@ export default function ProductsPage() {
     const imageUrl = imageValues[0] || String(normalizedRow.image_url ?? normalizedRow.image ?? normalizedRow.main_image ?? '')
 
     const specKeys = new Set([
-      'title',
-      'product_name',
-      'name',
-      'product_title',
-      'product',
-      'description',
-      'short_description',
-      'details',
-      'price',
-      'price_per_unit',
-      'unit_price',
-      'price_per_piece',
-      'currency',
-      'moq',
-      'minimum_order_quantity',
-      'minimum_order_qty',
-      'category',
-      'product_category',
-      'images',
-      'image_url',
-      'image',
-      'main_image',
-      'status',
-      'unit',
-      'sku',
-      'sub_category',
-      'fabric_type',
-      'gsm',
-      'width',
-      'color',
-      'lead_time',
-      'shipping_from',
-      'country_of_origin',
-      'hs_code',
-      'warranty',
-      'return_policy',
-      'packaging_details',
-      'care_instructions',
-      'video_url',
-      'additional_info',
+      'title', 'product_name', 'name', 'product_title', 'product',
+      'description', 'short_description', 'details',
+      'price', 'price_per_unit', 'unit_price', 'price_per_piece',
+      'currency', 'moq', 'minimum_order_quantity', 'minimum_order_qty',
+      'category', 'product_category',
+      'images', 'image_url', 'image', 'main_image',
+      'status', 'unit', 'sku', 'sub_category',
+      'fabric_type', 'gsm', 'width', 'color', 'lead_time',
+      'shipping_from', 'country_of_origin', 'hs_code', 'warranty',
+      'return_policy', 'packaging_details', 'care_instructions',
+      'video_url', 'additional_info',
     ])
 
     const specs: Record<string, string> = {}
@@ -324,24 +353,17 @@ export default function ProductsPage() {
       const sheetName = workbook.SheetNames[0]
       const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' }) as Array<Record<string, unknown>>
 
-      if (!rows.length) {
-        throw new Error('No rows found in the selected file')
-      }
+      if (!rows.length) throw new Error('No rows found')
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Please log in again')
 
-      const validRows = rows.filter((row) => Object.values(row).some((value) => value !== '' && value !== null && value !== undefined))
-      if (!validRows.length) {
-        throw new Error('No product rows were found')
-      }
-
       let insertedCount = 0
-      for (const row of validRows) {
+      for (const row of rows) {
         const payload = buildProductPayloadFromRow(row, user.id)
         const { error } = await supabase.from('products').insert(payload)
         if (error) throw error
-        insertedCount += 1
+        insertedCount++
       }
 
       setShowImportPanel(false)
@@ -376,6 +398,8 @@ export default function ProductsPage() {
         image_url: product.image_url || '',
       })
       setCustomFields(parseCustomFields(product.specifications))
+      setImageFiles([])
+      setImagePreviews([])
     } else {
       setEditingProduct(null)
       setForm({
@@ -389,49 +413,10 @@ export default function ProductsPage() {
         image_url: '',
       })
       setCustomFields([{ label: '', value: '' }])
+      setImageFiles([])
+      setImagePreviews([])
     }
     setShowModal(true)
-  }
-
-  async function saveProduct(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const productData = {
-      manufacturer_id: user.id,
-      title: form.title,
-      description: form.description,
-      price_per_unit: parseFloat(form.price_per_unit) || 0,
-      currency: form.currency,
-      moq: parseInt(form.moq) || 0,
-      category: form.category,
-      images: form.images,
-      image_url: form.images[0] || '',
-      status: 'active',
-      specifications: buildSpecificationsPayload(),
-    }
-
-    let error
-    if (editingProduct) {
-      const { error: updateError } = await supabase
-        .from('products')
-        .update(productData)
-        .eq('id', editingProduct.id)
-      error = updateError
-    } else {
-      const { error: insertError } = await supabase
-        .from('products')
-        .insert(productData)
-      error = insertError
-    }
-
-    if (error) {
-      alert('Error: ' + error.message)
-    } else {
-      setShowModal(false)
-      loadProducts()
-    }
   }
 
   async function deleteProduct(id: string) {
@@ -445,11 +430,7 @@ export default function ProductsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-slate-500">Loading...</div>
-      </div>
-    )
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>
   }
 
   return (
@@ -479,7 +460,6 @@ export default function ProductsPage() {
           <div className="bg-white rounded-2xl border p-5 mb-6 space-y-4">
             <div>
               <h2 className="font-semibold mb-3">Bulk Import Products</h2>
-              
               <div className="bg-slate-50 border rounded-lg p-4 mb-4">
                 <h3 className="font-medium text-sm mb-3">📋 Expected Format:</h3>
                 <div className="text-xs text-slate-700 space-y-2">
@@ -490,13 +470,12 @@ export default function ProductsPage() {
                     <li>• <strong>Price:</strong> price_per_unit, unit_price, price_per_piece</li>
                     <li>• <strong>MOQ:</strong> minimum_order_quantity, minimum_order_qty</li>
                     <li>• <strong>Category:</strong> product_category</li>
-                    <li>• <strong>Images:</strong> image_url, image, main_image (comma/semicolon separated for multiple)</li>
-                    <li>• <strong>Currency:</strong> (optional, defaults to USD)</li>
+                    <li>• <strong>Images:</strong> image_url, image, main_image (comma/semicolon separated)</li>
+                    <li>• <strong>Currency:</strong> optional, defaults to USD</li>
                   </ul>
-                  <p className="text-violet-700"><strong>✨ Tip:</strong> Any extra columns become custom fields (e.g., color, size, gsm, width)</p>
+                  <p className="text-violet-700"><strong>✨ Tip:</strong> Extra columns become custom fields</p>
                 </div>
               </div>
-
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={downloadSampleTemplate}
@@ -609,16 +588,17 @@ export default function ProductsPage() {
               {editingProduct ? 'Edit Product' : 'Add Product'}
             </h2>
             <form onSubmit={saveProduct} className="space-y-4">
+              {/* Image upload area */}
               <div>
                 <label className="block text-sm font-semibold mb-1">
-                  Product Images
+                  Product Images (Multiple Angles)
                 </label>
                 <div className="grid grid-cols-4 gap-2 mb-2">
-                  {form.images.map((img, idx) => (
+                  {imagePreviews.map((src, idx) => (
                     <div key={idx} className="relative aspect-square bg-slate-100 rounded">
                       <img
-                        src={img}
-                        alt=""
+                        src={src}
+                        alt={`preview ${idx}`}
                         className="w-full h-full object-cover rounded"
                       />
                       <button
@@ -630,18 +610,24 @@ export default function ProductsPage() {
                       </button>
                     </div>
                   ))}
+                  {/* Also show existing product images if editing */}
+                  {editingProduct && form.images.map((url, idx) => (
+                    <div key={`existing-${idx}`} className="relative aspect-square bg-slate-100 rounded">
+                      <img src={url} alt="existing" className="w-full h-full object-cover rounded" />
+                    </div>
+                  ))}
                 </div>
                 <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-lg text-sm inline-block">
-                  📤 Upload Images
+                  📤 Select Images
                   <input
                     type="file"
                     accept="image/*"
                     multiple
-                    onChange={handleImageUpload}
+                    onChange={handleImageSelect}
                     className="hidden"
                   />
                 </label>
-                {uploading && <span className="ml-2 text-sm">Uploading...</span>}
+                <p className="text-xs text-slate-500 mt-1">Select multiple images from different angles. They will be compressed to WebP.</p>
               </div>
 
               <div>
@@ -729,27 +715,10 @@ export default function ProductsPage() {
               </div>
 
               <div className="border-t pt-4 space-y-4">
-                <div className="rounded-xl border border-dashed border-violet-300 bg-violet-50 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-semibold text-violet-700">
-                      Bulk Upload Products (Excel/CSV)
-                    </label>
-                    <span className="text-xs text-violet-600">Optional</span>
-                  </div>
-                  <p className="text-xs text-slate-600 mb-2">
-                    Upload a file with columns like title, description, price, category, moq, image_url and extra fields.
-                  </p>
-                  <label className="inline-flex cursor-pointer items-center rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-medium text-violet-700 hover:bg-violet-100">
-                    <span>{importing ? 'Importing...' : 'Choose file'}</span>
-                    <input type="file" accept=".csv,.xlsx,.xls" onChange={handleBulkImport} className="hidden" />
-                  </label>
-                  {importing && <span className="ml-3 text-sm text-violet-600">Processing...</span>}
-                </div>
-
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-semibold">
-                      Extra Product Details
+                      Extra Product Details (Custom Fields)
                     </label>
                     <button
                       type="button"
@@ -787,7 +756,7 @@ export default function ProductsPage() {
                     ))}
                   </div>
                   <p className="text-xs text-slate-500 mt-2">
-                    Add any extra details you want, such as material, color, warranty, or special notes.
+                    Add extra details like material, color, warranty, etc.
                   </p>
                 </div>
               </div>
@@ -802,9 +771,10 @@ export default function ProductsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-cyan-600 text-white rounded-lg py-2 hover:bg-cyan-700"
+                  disabled={uploading}
+                  className="flex-1 bg-cyan-600 text-white rounded-lg py-2 hover:bg-cyan-700 disabled:bg-slate-400"
                 >
-                  Save Product
+                  {uploading ? 'Saving...' : 'Save Product'}
                 </button>
               </div>
             </form>
