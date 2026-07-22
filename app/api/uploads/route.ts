@@ -3,13 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { uploadToR2 } from '@/lib/r2'
 import sharp from 'sharp'
 
-// Increase body size limit to allow multiple images
+// ✅ Correct config for Next.js 16
 export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '20mb',
-    },
-  },
+  maxBodySize: '20mb', // This works! (replaces api.bodyParser.sizeLimit)
 }
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic'])
@@ -47,7 +43,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid folder' }, { status: 400 })
     }
 
-    // For product images, we expect multiple files and product_id
+    // ── Product images (multiple files) ──
     if (folder === 'products') {
       if (!productId) {
         return NextResponse.json({ error: 'Product ID is required for product images' }, { status: 400 })
@@ -78,7 +74,6 @@ export async function POST(request: NextRequest) {
           )
         }
 
-        // Read buffer
         const buffer = Buffer.from(await file.arrayBuffer())
 
         // Compress and convert to WebP (quality: 80)
@@ -86,13 +81,10 @@ export async function POST(request: NextRequest) {
           .webp({ quality: 80, effort: 6 })
           .toBuffer()
 
-        // Create a new File object (or just upload the buffer)
-        // We need to pass a file-like object to uploadToR2; we can create a Blob/File
         const webpFile = new File([webpBuffer], `${Date.now()}-${i}.webp`, {
           type: 'image/webp',
         })
 
-        // Upload to R2 using your existing uploadToR2
         const uploaded = await uploadToR2({
           file: webpFile,
           folder: `products/${productId}`,
@@ -105,13 +97,13 @@ export async function POST(request: NextRequest) {
           .insert({
             product_id: productId,
             image_url: uploaded.url,
-            is_primary: i === 0, // first image is primary
+            is_primary: i === 0,
             sort_order: i + 1,
           })
 
         if (dbError) {
           console.error('Error saving image record:', dbError)
-          // Continue anyway – we already uploaded
+          // Continue – file already uploaded
         }
 
         uploadedUrls.push(uploaded.url)
@@ -124,14 +116,13 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // For other folders (profiles, assets, etc.) – single file upload
+    // ── Single file upload (profiles, assets, etc.) ──
     const file = formData.get('file') as File | null
     if (!file) {
       return NextResponse.json({ error: 'File is required' }, { status: 400 })
     }
 
-    const MAX_FILE_SIZE = 10 * 1024 * 1024
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > 10 * 1024 * 1024) {
       return NextResponse.json({ error: 'File too large (max 10 MB)' }, { status: 400 })
     }
 
@@ -142,7 +133,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only image, video, and supported document uploads are allowed' }, { status: 400 })
     }
 
-    // For images, we also compress to WebP (except for documents/videos)
     let finalFile = file
     if (isImage && ALLOWED_IMAGE_TYPES.has(file.type)) {
       const buffer = Buffer.from(await file.arrayBuffer())
