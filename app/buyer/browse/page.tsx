@@ -3,7 +3,12 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/app/components/Navbar'
-import { generateManufacturerCode } from '@/lib/code-generator'
+
+// Function to generate manufacturer code (fallback if not imported)
+function generateManufacturerCode(id: string): string {
+  // Simple fallback: take first 6 chars of UUID
+  return id ? `MFR-${id.slice(0, 6)}` : 'MFR-XXXX'
+}
 
 export default function BuyerBrowsePage() {
   const [products, setProducts] = useState([])
@@ -29,31 +34,21 @@ export default function BuyerBrowsePage() {
         .single()
       setProfile(profileData)
       
-      // Fetch all active products (buyer can see all)
       try {
-        console.log('🔄 Fetching products...')
-        
-        // Query without the missing manufacturer_code column
-        const { data: productsData, error: productsError } = await supabase
+        // ✅ Added product_code to the select query
+        const { data: productsData, error } = await supabase
           .from('products')
-          .select('id, title, description, category, price_per_unit, currency, moq, manufacturer_id, image_url, status')
+          .select('id, title, description, category, price_per_unit, currency, moq, manufacturer_id, image_url, status, images, product_code')
           .eq('status', 'active')
           .order('created_at', { ascending: false })
         
-        if (productsError) {
-          console.error('❌ Products query error:', {
-            message: productsError.message,
-            details: productsError.details,
-            hint: productsError.hint,
-            code: productsError.code
-          })
+        if (error) {
+          console.error('Products query error:', error)
         } else {
-          console.log('✅ Products loaded:', productsData?.length || 0)
+          setProducts(productsData || [])
         }
-        
-        setProducts(productsData || [])
       } catch (err) {
-        console.error('❌ Products fetch exception:', err)
+        console.error('Products fetch exception:', err)
         setProducts([])
       }
       setLoading(false)
@@ -61,10 +56,8 @@ export default function BuyerBrowsePage() {
     load()
   }, [])
 
-  // Get unique categories
   const categories = ['All', ...new Set(products.map(p => p.category).filter(Boolean))]
 
-  // Filter products based on search and category
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           p.description?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -88,13 +81,12 @@ export default function BuyerBrowsePage() {
       <Navbar role="buyer" companyName={profile?.company_name || 'Buyer'} />
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-slate-800">Browse Products</h1>
           <p className="text-slate-500 mt-1">Discover products from trusted manufacturers</p>
         </div>
 
-        {/* Stats Cards - Same as dashboard */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white rounded-xl p-5 border">
             <div className="text-2xl mb-2">🛒</div>
@@ -118,7 +110,7 @@ export default function BuyerBrowsePage() {
           </div>
         </div>
 
-        {/* Search & Filter - Same as dashboard */}
+        {/* Search & Filter */}
         <div className="bg-white rounded-xl p-4 mb-6 shadow-sm border">
           <div className="flex flex-col md:flex-row gap-4">
             <input 
@@ -140,7 +132,6 @@ export default function BuyerBrowsePage() {
           </div>
         </div>
 
-        {/* Results count */}
         <div className="mb-4 flex justify-between items-center">
           <p className="text-sm text-slate-500">
             Showing {filteredProducts.length} of {products.length} products
@@ -155,7 +146,6 @@ export default function BuyerBrowsePage() {
           )}
         </div>
 
-        {/* Products Grid - Same card style as dashboard */}
         {filteredProducts.length === 0 ? (
           <div className="bg-white rounded-2xl p-12 text-center border">
             <div className="text-6xl mb-4">🔍</div>
@@ -204,6 +194,12 @@ export default function BuyerBrowsePage() {
                     {p.manufacturer_id && (
                       <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
                         <span>🏭</span> {generateManufacturerCode(p.manufacturer_id)}
+                      </p>
+                    )}
+                    {/* ✅ Display product sub‑code */}
+                    {p.product_code && (
+                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                        <span>🔖</span> {p.product_code}
                       </p>
                     )}
                     {p.category && (

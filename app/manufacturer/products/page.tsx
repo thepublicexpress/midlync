@@ -5,11 +5,30 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/app/components/Navbar'
 import QRModal from '@/app/components/QRModal'
+import { generateProductCode } from '@/lib/code-generator'
 
 type CustomField = {
   label: string
   value: string
 }
+
+// Common textile units + custom
+const TEXTILE_UNITS = [
+  'piece',
+  'meter',
+  'yard',
+  'kg',
+  'gram',
+  'roll',
+  'dozen',
+  'set',
+  'pair',
+  'ton',
+  'skein',
+  'cone',
+  'bundle',
+  'custom', // special option
+]
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<any[]>([])
@@ -23,6 +42,7 @@ export default function ProductsPage() {
   const [qrModalOpen, setQrModalOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<any>(null)
   const [customFields, setCustomFields] = useState<CustomField[]>([{ label: '', value: '' }])
+  const [customUnit, setCustomUnit] = useState('') // for custom unit input
   const router = useRouter()
   const supabase = createClient()
 
@@ -35,15 +55,17 @@ export default function ProductsPage() {
     description: string
     price_per_unit: string
     currency: string
+    unit: string
     moq: string
     category: string
-    images: string[] // URLs stored after upload
+    images: string[]
     image_url: string
   }>({
     title: '',
     description: '',
     price_per_unit: '',
     currency: 'USD',
+    unit: 'piece',
     moq: '',
     category: '',
     images: [],
@@ -80,7 +102,7 @@ export default function ProductsPage() {
     setLoading(false)
   }
 
-  // ── Image Upload Helper (multiple files) ──
+  // ── Image Upload Helper ──
   async function uploadProductImages(files: File[], productId: string): Promise<string[]> {
     const formData = new FormData()
     files.forEach(file => formData.append('files', file))
@@ -103,10 +125,9 @@ export default function ProductsPage() {
     if (!files?.length) return
     const fileArray = Array.from(files)
     setImageFiles(prev => [...prev, ...fileArray])
-    // Generate previews
     const newPreviews = fileArray.map(file => URL.createObjectURL(file))
     setImagePreviews(prev => [...prev, ...newPreviews])
-    e.target.value = '' // allow re-selection
+    e.target.value = ''
   }
 
   function removeImage(index: number) {
@@ -114,22 +135,28 @@ export default function ProductsPage() {
     setImagePreviews(prev => prev.filter((_, i) => i !== index))
   }
 
-  // ── Save Product (with multi-image upload) ──
+  // ── Save Product ──
   async function saveProduct(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
+    // Determine final unit value
+    let finalUnit = form.unit
+    if (finalUnit === 'custom') {
+      finalUnit = customUnit.trim() || 'piece'
+    }
+
     setUploading(true)
 
     try {
-      // 1. Build product data (without images)
-      const productData = {
+      const baseProductData = {
         manufacturer_id: user.id,
         title: form.title,
         description: form.description,
         price_per_unit: parseFloat(form.price_per_unit) || 0,
         currency: form.currency,
+        unit: finalUnit,
         moq: parseInt(form.moq) || 0,
         category: form.category,
         status: 'active',
@@ -139,15 +166,17 @@ export default function ProductsPage() {
       let productId: string
 
       if (editingProduct) {
-        // Update existing product (keep images as is)
         const { error } = await supabase
           .from('products')
-          .update(productData)
+          .update(baseProductData)
           .eq('id', editingProduct.id)
         if (error) throw error
         productId = editingProduct.id
       } else {
-        // Insert new product
+        const productData = {
+          ...baseProductData,
+          product_code: generateProductCode(),
+        }
         const { data, error } = await supabase
           .from('products')
           .insert(productData)
@@ -157,10 +186,8 @@ export default function ProductsPage() {
         productId = data.id
       }
 
-      // 2. If there are new images, upload them
       if (imageFiles.length > 0) {
         const urls = await uploadProductImages(imageFiles, productId)
-        // Update product with image URLs (store first as primary, all in images array)
         const primaryImage = urls[0] || ''
         const { error: updateError } = await supabase
           .from('products')
@@ -170,8 +197,6 @@ export default function ProductsPage() {
           })
           .eq('id', productId)
         if (updateError) throw updateError
-
-        // Clear image state after successful upload
         setImageFiles([])
         setImagePreviews([])
       }
@@ -186,6 +211,7 @@ export default function ProductsPage() {
     }
   }
 
+  // ── Custom Fields ──
   function addCustomField() {
     setCustomFields([...customFields, { label: '', value: '' }])
   }
@@ -242,6 +268,7 @@ export default function ProductsPage() {
     return Object.keys(specs).length > 0 ? specs : null
   }
 
+  // ── Bulk Import ──
   function normalizeImages(value: unknown): string[] {
     if (Array.isArray(value)) {
       return value.filter(Boolean).map((item) => String(item))
@@ -259,6 +286,7 @@ export default function ProductsPage() {
         description: 'Premium quality cotton fabric, 100% natural',
         price: '2.50',
         currency: 'USD',
+        unit: 'meter',
         moq: '100',
         category: 'Fabrics',
         image_url: 'https://example.com/image1.jpg',
@@ -271,6 +299,7 @@ export default function ProductsPage() {
         description: 'High strength polyester thread for stitching',
         price: '0.50',
         currency: 'USD',
+        unit: 'cone',
         moq: '500',
         category: 'Threads',
         image_url: 'https://example.com/image2.jpg',
@@ -278,7 +307,6 @@ export default function ProductsPage() {
         color: 'Black'
       }
     ]
-
     const ws = XLSX.utils.json_to_sheet(sampleData)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Products')
@@ -295,6 +323,7 @@ export default function ProductsPage() {
     const description = String(normalizedRow.description ?? normalizedRow.short_description ?? normalizedRow.details ?? '')
     const price = Number(normalizedRow.price ?? normalizedRow.price_per_unit ?? normalizedRow.unit_price ?? normalizedRow.price_per_piece ?? '0') || 0
     const currency = String(normalizedRow.currency ?? 'USD').toUpperCase()
+    const unit = String(normalizedRow.unit ?? normalizedRow.unit_of_measure ?? 'piece')
     const moq = Number(normalizedRow.moq ?? normalizedRow.minimum_order_quantity ?? normalizedRow.minimum_order_qty ?? '0') || 0
     const category = String(normalizedRow.category ?? normalizedRow.product_category ?? '')
     const imageValues = normalizeImages(normalizedRow.images ?? normalizedRow.image_url ?? normalizedRow.image ?? normalizedRow.main_image ?? '')
@@ -303,11 +332,11 @@ export default function ProductsPage() {
     const specKeys = new Set([
       'title', 'product_name', 'name', 'product_title', 'product',
       'description', 'short_description', 'details',
-      'price', 'price_per_unit', 'unit_price', 'price_per_piece',
+      'price', 'price_per_unit', 'unit_price', 'price_per_piece', 'unit', 'unit_of_measure',
       'currency', 'moq', 'minimum_order_quantity', 'minimum_order_qty',
       'category', 'product_category',
       'images', 'image_url', 'image', 'main_image',
-      'status', 'unit', 'sku', 'sub_category',
+      'status', 'sku', 'sub_category',
       'fabric_type', 'gsm', 'width', 'color', 'lead_time',
       'shipping_from', 'country_of_origin', 'hs_code', 'warranty',
       'return_policy', 'packaging_details', 'care_instructions',
@@ -322,10 +351,12 @@ export default function ProductsPage() {
 
     return {
       manufacturer_id: userId,
+      product_code: row.product_code || generateProductCode(),
       title,
       description,
       price_per_unit: price,
       currency,
+      unit,
       moq,
       category,
       images: imageValues,
@@ -378,6 +409,7 @@ export default function ProductsPage() {
     }
   }
 
+  // ── Modal Open / Edit ──
   function openModal(product: any = null) {
     if (product) {
       setEditingProduct(product)
@@ -387,16 +419,25 @@ export default function ProductsPage() {
       } catch {
         images = []
       }
+      const unitVal = product.unit || 'piece'
       setForm({
         title: product.title || '',
         description: product.description || '',
         price_per_unit: product.price_per_unit || '',
         currency: product.currency || 'USD',
+        unit: unitVal,
         moq: product.moq || '',
         category: product.category || '',
         images: images,
         image_url: product.image_url || '',
       })
+      if (!TEXTILE_UNITS.includes(unitVal)) {
+        // custom unit was used
+        setForm(prev => ({ ...prev, unit: 'custom' }))
+        setCustomUnit(unitVal)
+      } else {
+        setCustomUnit('')
+      }
       setCustomFields(parseCustomFields(product.specifications))
       setImageFiles([])
       setImagePreviews([])
@@ -407,11 +448,13 @@ export default function ProductsPage() {
         description: '',
         price_per_unit: '',
         currency: 'USD',
+        unit: 'piece',
         moq: '',
         category: '',
         images: [],
         image_url: '',
       })
+      setCustomUnit('')
       setCustomFields([{ label: '', value: '' }])
       setImageFiles([])
       setImagePreviews([])
@@ -468,6 +511,7 @@ export default function ProductsPage() {
                     <li>• <strong>Title:</strong> product, product_name, product_title, name</li>
                     <li>• <strong>Description:</strong> short_description, details</li>
                     <li>• <strong>Price:</strong> price_per_unit, unit_price, price_per_piece</li>
+                    <li>• <strong>Unit:</strong> unit, unit_of_measure (defaults to 'piece')</li>
                     <li>• <strong>MOQ:</strong> minimum_order_quantity, minimum_order_qty</li>
                     <li>• <strong>Category:</strong> product_category</li>
                     <li>• <strong>Images:</strong> image_url, image, main_image (comma/semicolon separated)</li>
@@ -541,8 +585,13 @@ export default function ProductsPage() {
                       {p.title}
                     </h3>
                     <div className="text-cyan-600 font-bold text-lg">
-                      ${p.price_per_unit || '—'}
+                      ${p.price_per_unit || '—'} <span className="text-sm font-normal text-gray-500">/ {p.unit || 'piece'}</span>
                     </div>
+                    {p.product_code && (
+                      <div className="text-xs text-gray-500 mt-1 font-mono">
+                        Code: {p.product_code}
+                      </div>
+                    )}
                     <div className="flex gap-2 mt-3">
                       <button
                         onClick={() => openModal(p)}
@@ -610,7 +659,6 @@ export default function ProductsPage() {
                       </button>
                     </div>
                   ))}
-                  {/* Also show existing product images if editing */}
                   {editingProduct && form.images.map((url, idx) => (
                     <div key={`existing-${idx}`} className="relative aspect-square bg-slate-100 rounded">
                       <img src={url} alt="existing" className="w-full h-full object-cover rounded" />
@@ -657,11 +705,10 @@ export default function ProductsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* Price + Unit + Currency */}
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold mb-1">
-                    Price per Unit
-                  </label>
+                  <label className="block text-sm font-semibold mb-1">Price</label>
                   <input
                     type="number"
                     step="0.01"
@@ -672,9 +719,34 @@ export default function ProductsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-1">
-                    Currency
-                  </label>
+                  <label className="block text-sm font-semibold mb-1">Unit</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={form.unit}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setForm({ ...form, unit: val })
+                        if (val !== 'custom') setCustomUnit('')
+                      }}
+                      className="flex-1 border rounded-lg px-3 py-2"
+                    >
+                      {TEXTILE_UNITS.map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
+                    {form.unit === 'custom' && (
+                      <input
+                        type="text"
+                        placeholder="Custom unit"
+                        value={customUnit}
+                        onChange={(e) => setCustomUnit(e.target.value)}
+                        className="flex-1 border rounded-lg px-3 py-2"
+                      />
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Currency</label>
                   <select
                     value={form.currency}
                     onChange={(e) => setForm({ ...form, currency: e.target.value })}
